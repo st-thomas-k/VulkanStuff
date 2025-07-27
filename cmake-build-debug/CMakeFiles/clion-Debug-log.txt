@@ -1,0 +1,12 @@
+"C:\Program Files\JetBrains\CLion 2024.3\bin\cmake\win\x64\bin\cmake.exe" -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_MAKE_PROGRAM=C:/Program Files/JetBrains/CLion 2024.3/bin/ninja/win/x64/ninja.exe" -DCMAKE_TOOLCHAIN_FILE=C:/Users/sttho/vcpkg/scripts/buildsystems/vcpkg.cmake -G Ninja -S C:\Users\sttho\CLionProjects\idk -B C:\Users\sttho\CLionProjects\idk\cmake-build-debug
+-- Using Win32 for window creation
+-- GLSL_SOURCE_FILES: C:/Users/sttho/CLionProjects/idk/shaders/mesh.frag;C:/Users/sttho/CLionProjects/idk/shaders/mesh.vert
+-- BUILDING SHADER
+-- C:/Users/sttho/CLionProjects/idk/shaders/mesh.frag
+-- COMMANDC:/VulkanSDK/1.4.313.2/Bin/glslangValidator.exe-VC:/Users/sttho/CLionProjects/idk/shaders/mesh.frag-oC:/Users/sttho/CLionProjects/idk/shaders/mesh.frag.spv
+-- BUILDING SHADER
+-- C:/Users/sttho/CLionProjects/idk/shaders/mesh.vert
+-- COMMANDC:/VulkanSDK/1.4.313.2/Bin/glslangValidator.exe-VC:/Users/sttho/CLionProjects/idk/shaders/mesh.vert-oC:/Users/sttho/CLionProjects/idk/shaders/mesh.vert.spv
+-- Configuring done (0.2s)
+-- Generating done (0.1s)
+-- Build files have been written to: C:/Users/sttho/CLionProjects/idk/cmake-build-debug

@@ -1,0 +1,15 @@
+ninja_dyndep_version = 1.0
+build CMakeFiles\idk.dir\src\main.cpp.obj: dyndep
+
+build CMakeFiles\idk.dir\base\base.cpp.obj: dyndep
+
+build CMakeFiles\idk.dir\base\device.cpp.obj: dyndep
+
+build CMakeFiles\idk.dir\base\swapchain.cpp.obj: dyndep
+
+build CMakeFiles\idk.dir\tools\utils.cpp.obj: dyndep
+
+build CMakeFiles\idk.dir\tools\camera.cpp.obj: dyndep
+
+build CMakeFiles\idk.dir\src\mesh.cpp.obj: dyndep
+

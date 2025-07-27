@@ -1,0 +1,24 @@
+{
+	"bmi-installation" : null,
+	"compiler-frontend-variant" : "MSVC",
+	"compiler-id" : "MSVC",
+	"compiler-simulate-id" : "",
+	"config" : "Debug",
+	"cxx-modules" : {},
+	"dir-cur-bld" : "C:/Users/sttho/CLionProjects/idk/cmake-build-debug",
+	"dir-cur-src" : "C:/Users/sttho/CLionProjects/idk",
+	"dir-top-bld" : "C:/Users/sttho/CLionProjects/idk/cmake-build-debug",
+	"dir-top-src" : "C:/Users/sttho/CLionProjects/idk",
+	"exports" : [],
+	"forward-modules-from-target-dirs" : [],
+	"include-dirs" : 
+	[
+		"C:\\Users\\sttho\\CLionProjects\\idk\\external\\tinygltf",
+		"_deps\\glfw-src\\include",
+		"C:\\Users\\sttho\\vcpkg\\installed\\x64-windows\\include",
+		"C:\\Users\\sttho\\vcpkg\\installed\\x64-windows\\include\\vma"
+	],
+	"language" : "CXX",
+	"linked-target-dirs" : [],
+	"module-dir" : "C:/Users/sttho/CLionProjects/idk/cmake-build-debug/CMakeFiles/idk.dir"
+}
