@@ -20,6 +20,17 @@ glm::mat4 Camera::getRotationMatrix() {
     return glm::toMat4(yawRotation) * glm::toMat4(pitchRotation);
 }
 
+glm::vec3 Camera::getFront() {
+
+    glm::vec3 direction;
+    direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+    direction.y = sin(glm::radians(pitch));
+    direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+    return glm::normalize(direction);
+;
+
+}
+
 void Camera::processEvent(GLFWwindow *window) {
     velocity.z = 0;
     velocity.x = 0;

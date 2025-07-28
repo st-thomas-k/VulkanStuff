@@ -5,7 +5,7 @@
 #include <array>
 #include "../base/base.h"
 
-#define INSTANCE_COUNT 5000000
+#define INSTANCE_COUNT 100000
 class GLTFLoader;
 
 using namespace std::chrono;
@@ -28,13 +28,14 @@ private:
     void recordCommands(VkCommandBuffer cmd, uint32_t frameNumber, VkImageView swapchainImageView);
     void drawFrame();
     void updateTransformMatrix();
+    void createMipmaps(VkCommandBuffer cmd, VkImage image, VkFormat imageFormat,
+                          int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 
     VkPipelineLayout              meshPipelineLayout;
     VkPipeline                    meshPipeline;
 
     VkPipelineLayout              instancePipelineLayout;
     VkPipeline                    instancePipeline;
-
 
     MeshPushConstants             pushConstants;
     glm::mat4                     transform;
@@ -55,7 +56,7 @@ private:
     AllocatedImage                texImage;
     MeshBuffers                   meshBuffer;
 
-    uint32_t ccCount;
+    uint32_t                      trueInstanceCount;
 
     AllocatedBuffer               indirectBuffer;
     DrawIndexedIndirectCommand    indirectCommand;

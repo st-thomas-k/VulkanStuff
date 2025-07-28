@@ -550,6 +550,15 @@ void PipelineBuilder::setMultisamplingNone() {
     multisampling.alphaToOneEnable = VK_FALSE;
 }
 
+void PipelineBuilder::setMultisamplingSampleRate(float minSampleShading) {
+    multisampling.sampleShadingEnable = true;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.minSampleShading = minSampleShading;
+    multisampling.pSampleMask = nullptr;
+    multisampling.alphaToCoverageEnable = VK_FALSE;
+    multisampling.alphaToOneEnable = VK_FALSE;
+}
+
 void PipelineBuilder::disableBlending() {
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 

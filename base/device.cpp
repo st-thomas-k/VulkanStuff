@@ -132,6 +132,7 @@ VkDevice createLogicalDevice(VkPhysicalDevice physicalDevice, QueueFamilyIndices
     VkPhysicalDeviceFeatures2 features2 { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
     features2.features.multiDrawIndirect = true;
     features2.features.samplerAnisotropy = true;
+    features2.features.sampleRateShading = true;
     features2.pNext = &features12;
 
     VkDeviceCreateInfo createInfo = {};

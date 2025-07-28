@@ -14,7 +14,7 @@ Mesh::Mesh(uint32_t _width, uint32_t _height, const char* _windowName)
     : Base(_width, _height, _windowName) {
 
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    initCamera(0.0f, 100.0f, 200.0f);
+    initCamera(0.0f, 50.0f, 100.0f);
     initDepthImage();
     createDescriptors();
     initMeshPipeline();
@@ -39,59 +39,52 @@ void Mesh::createDescriptors() {
     sampler.magFilter = VK_FILTER_LINEAR;
     sampler.minFilter = VK_FILTER_LINEAR;
     sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampler.minLod = 0.0f;
+    sampler.maxLod = VK_LOD_CLAMP_NONE;
     sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     sampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler.mipLodBias = 0.0f;
+    sampler.mipLodBias = -0.25f;
     sampler.anisotropyEnable = VK_TRUE;
     sampler.maxAnisotropy = 16.0f;
     sampler.compareEnable = VK_FALSE;
     sampler.compareOp = VK_COMPARE_OP_ALWAYS;
 
-    vkCreateSampler(device, &sampler, nullptr, &texSampler);
+    VK_CHECK(vkCreateSampler(device, &sampler, nullptr, &texSampler));
 }
 
 void Mesh::createInstances() {
     instances.clear();
-    instances.reserve(INSTANCE_COUNT);
+    instances.reserve(100000);
 
-    // Calculate grid dimensions for ~5 million instances
-    // 171^3 = 5,000,211 (very close to 5 million)
-    const int gridSize = 171;
+    const int gridX = 50;
+    const int gridY = 40;
+    const int gridZ = 50;
+    const float spacing = 0.6f;
+    const float cubeScale = 0.3f;
 
-    // Very tight spacing and tiny cubes
-    const float spacing = 0.5f;
-    const float gridOffset = (gridSize - 1) * spacing * 0.5f;
-    const float cubeScale = 0.3f;  // Very small cubes
-
-    std::cout << "Creating " << INSTANCE_COUNT << " instances..." << std::endl;
-
-    int instanceCount = 0;
-    for (int x = 0; x < gridSize && instanceCount < INSTANCE_COUNT; x++) {
-        for (int y = 0; y < gridSize && instanceCount < INSTANCE_COUNT; y++) {
-            for (int z = 0; z < gridSize && instanceCount < INSTANCE_COUNT; z++) {
+    for (int x = 0; x < gridX; x++) {
+        for (int y = 0; y < gridY; y++) {
+            for (int z = 0; z < gridZ; z++) {
                 InstanceData instance{};
 
                 instance.position = glm::vec3(
-                    x * spacing - gridOffset,
-                    y * spacing - gridOffset,
-                    z * spacing - gridOffset
+                    (x - gridX/2) * spacing,
+                    (y - gridY/2) * spacing,
+                    (z - gridZ/2) * spacing
                 );
 
                 instance.scale = cubeScale;
-
                 instances.push_back(instance);
-                instanceCount++;
             }
         }
     }
-    ccCount = static_cast<uint32_t>(instances.size());
 
+    trueInstanceCount = static_cast<uint32_t>(instances.size());
 
     std::cout << "Created " << instances.size() << " instances" << std::endl;
     std::cout << "Instance buffer size: " << (instances.size() * sizeof(InstanceData) / (1024.0 * 1024.0)) << " MB" << std::endl;
 
-    // Create instance buffer
     size_t bufferSize = instances.size() * sizeof(InstanceData);
 
     instanceBuffer = createAllocatedBuffer(
@@ -100,7 +93,6 @@ void Mesh::createInstances() {
         VMA_MEMORY_USAGE_GPU_ONLY
     );
 
-    // Use larger staging buffer and copy in chunks if needed
     AllocatedBuffer staging = createAllocatedBuffer(
         bufferSize,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -120,12 +112,14 @@ void Mesh::createInstances() {
 
     vmaDestroyBuffer(allocator, staging.buffer, staging.allocation);
 
-    // Clear CPU-side data to save memory if not needed
+    // done with this
     instances.clear();
     instances.shrink_to_fit();
 }
 
 void Mesh::initDescriptorSets() {
+    // descriptor set is the same since one object.
+    // just allocate them to each frame ig.
     for (uint32_t i = 0; i < MAX_FRAMES; i++) {
         imageDescriptorSets[i] = frames[i]._frameDescriptors.allocate(device, meshDescriptorLayout);
         DescriptorWriter writer;
@@ -145,6 +139,7 @@ void Mesh::initMeshPipeline() {
     fragShader = loadShader(device, "../shaders/mesh.frag.spv");
     assert(fragShader);
 
+    // only need PCs for vertex stage
     VkPushConstantRange range;
     range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     range.offset = 0;
@@ -177,13 +172,12 @@ void Mesh::initMeshPipeline() {
     pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
     pipelineBuilder.setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
-    pipelineBuilder.setMultisamplingNone();
+    pipelineBuilder.setMultisamplingSampleRate(0.20f);
     pipelineBuilder.disableBlending();
     pipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_LESS);
     pipelineBuilder.setColorAttachmentFormat(VK_FORMAT_B8G8R8A8_SRGB);
     pipelineBuilder.setDepthFormat(VK_FORMAT_D32_SFLOAT);
 
-    // Add vertex input state for instancing
     pipelineBuilder.vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     pipelineBuilder.vertexInputInfo.pNext = nullptr;
     pipelineBuilder.vertexInputInfo.flags = 0;
@@ -298,11 +292,14 @@ void Mesh::loadObj(const char *filePath) {
 }
 
 void Mesh::loadTextureImage(const char *filePath) {
-    int texWidth, texHeight, texChannels;
+     int texWidth, texHeight, texChannels;
 
     stbi_uc* pixels = stbi_load(filePath, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
     uint64_t imageSize = texWidth * texHeight * 4;
+
+    uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
+    std::cout << "Creating texture with " << mipLevels << " mip levels" << std::endl;
 
     VkBuffer stagingBuffer;
     VmaAllocation stagingAllocation;
@@ -332,9 +329,11 @@ void Mesh::loadTextureImage(const char *filePath) {
     };
 
     texImage = createAllocatedImage(imageExtent, VK_FORMAT_R8G8B8A8_SRGB,
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, false);
+           VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+           true);
 
     immediateSubmit([&](VkCommandBuffer cmd) {
+        // Transition entire image (all mip levels) to transfer destination
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -344,7 +343,7 @@ void Mesh::loadTextureImage(const char *filePath) {
         barrier.image = texImage.image;
         barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.levelCount = mipLevels;
         barrier.subresourceRange.baseArrayLayer = 0;
         barrier.subresourceRange.layerCount = 1;
         barrier.srcAccessMask = 0;
@@ -352,10 +351,7 @@ void Mesh::loadTextureImage(const char *filePath) {
 
         vkCmdPipelineBarrier(cmd,
             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-            0,
-            0, nullptr,
-            0, nullptr,
-            1, &barrier);
+            0, 0, nullptr, 0, nullptr, 1, &barrier);
 
         VkBufferImageCopy region{};
         region.bufferOffset = 0;
@@ -373,25 +369,18 @@ void Mesh::loadTextureImage(const char *filePath) {
 
         vkCmdCopyBufferToImage(cmd, stagingBuffer, texImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-        vkCmdPipelineBarrier(cmd,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            0,
-            0, nullptr,
-            0, nullptr,
-            1, &barrier);
+        // FIXED: Generate mipmaps BEFORE final transition
+        // The createMipmaps function will handle the final transition to SHADER_READ_ONLY_OPTIMAL
+        createMipmaps(cmd, texImage.image, VK_FORMAT_R8G8B8A8_SRGB, texWidth, texHeight, mipLevels);
     });
 
     vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+
 }
 
 void Mesh::createIndirectBuffer() {
     indirectCommand.indexCount = indexCount;
-    indirectCommand.instanceCount = ccCount;
+    indirectCommand.instanceCount = trueInstanceCount;
     indirectCommand.firstIndex = 0;
     indirectCommand.vertexOffset = 0;
     indirectCommand.firstInstance = 0;
@@ -440,8 +429,9 @@ void Mesh::recordCommands(VkCommandBuffer cmd, uint32_t frameNumber, VkImageView
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
 
-    // Bind instance buffer (no vertex buffer needed with buffer device address)
     VkDeviceSize offset = 0;
+
+    // send draw params to GPU
     vkCmdBindVertexBuffers(cmd, 0, 1, &instanceBuffer.buffer, &offset);
 
     vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
@@ -455,6 +445,8 @@ void Mesh::recordCommands(VkCommandBuffer cmd, uint32_t frameNumber, VkImageView
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipelineLayout,
                                    0, 1, &imageDescriptorSets[frameIndex], 0, nullptr);
 
+    // use draw params on GPU to render all blocks.
+    // no need to iterate 0 -> object count. one call.
     vkCmdDrawIndexedIndirect(cmd, indirectBuffer.buffer, 0, 1, sizeof(DrawIndexedIndirectCommand));
 
     endCommands(cmd);
@@ -471,7 +463,7 @@ void Mesh::drawFrame() {
     lastFrameTime = currentTime;
 
     camera.processEvent(window);
-    camera.velocity *= 0.001f;
+    camera.velocity *= 0.1f;
     camera.update();
 
     VK_CHECK(vkWaitForFences(device, 1, &frame.renderFence, VK_TRUE, UINT64_MAX));
@@ -553,6 +545,89 @@ void Mesh::updateTransformMatrix() {
     proj[1][1] *= -1;
 
     transform = proj * view * model;
+}
+
+void Mesh::createMipmaps(VkCommandBuffer cmd, VkImage image, VkFormat imageFormat,
+                        int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
+   // Check format support
+    VkFormatProperties formatProperties;
+    vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, &formatProperties);
+
+    if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+        throw std::runtime_error("Texture image format does not support linear blitting!");
+    }
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.image = image;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.levelCount = 1;
+
+    int32_t mipWidth = texWidth;
+    int32_t mipHeight = texHeight;
+
+    for (uint32_t i = 1; i < mipLevels; i++) {
+        barrier.subresourceRange.baseMipLevel = i - 1;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+            0, nullptr, 0, nullptr, 1, &barrier);
+
+        VkImageBlit blit{};
+        blit.srcOffsets[0] = {0, 0, 0};
+        blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
+        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.srcSubresource.mipLevel = i - 1;
+        blit.srcSubresource.baseArrayLayer = 0;
+        blit.srcSubresource.layerCount = 1;
+
+        int32_t nextMipWidth = mipWidth > 1 ? mipWidth / 2 : 1;
+        int32_t nextMipHeight = mipHeight > 1 ? mipHeight / 2 : 1;
+
+        blit.dstOffsets[0] = {0, 0, 0};
+        blit.dstOffsets[1] = {nextMipWidth, nextMipHeight, 1};
+        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.dstSubresource.mipLevel = i;
+        blit.dstSubresource.baseArrayLayer = 0;
+        blit.dstSubresource.layerCount = 1;
+
+        // IMPROVEMENT 3: Use VK_FILTER_LINEAR for highest quality downsampling
+        vkCmdBlitImage(cmd,
+            image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1, &blit, VK_FILTER_LINEAR);
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+            0, nullptr, 0, nullptr, 1, &barrier);
+
+        mipWidth = nextMipWidth;
+        mipHeight = nextMipHeight;
+    }
+
+    // Transition the last mip level
+    barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+        0, nullptr, 0, nullptr, 1, &barrier);
 }
 
 void Mesh::run() {

@@ -105,6 +105,7 @@ struct PipelineBuilder {
     void setPolygonMode(VkPolygonMode mode);
     void setCullMode(VkCullModeFlags cullModeFlags, VkFrontFace frontFace);
     void setMultisamplingNone();
+    void setMultisamplingSampleRate(float minSampleShading);
     void disableBlending();
     void setColorAttachmentFormat(VkFormat format);
     void setDepthFormat(VkFormat format);
@@ -164,8 +165,8 @@ struct DrawPushConstants {
 };
 
 struct MeshPushConstants {
-    glm::mat4       worldMatrix;
-    VkDeviceAddress vertexBuffer;
+    glm::mat4             worldMatrix;
+    VkDeviceAddress       vertexBuffer;
 };
 
 struct MeshBuffers {

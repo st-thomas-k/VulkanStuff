@@ -13,6 +13,7 @@ public:
 
     glm::mat4 getViewMatrix();
     glm::mat4 getRotationMatrix();
+    glm::vec3 getFront();
     void processEvent(GLFWwindow* window);
     void reset();
     void update();
