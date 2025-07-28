@@ -5,6 +5,7 @@
 #include <array>
 #include "../base/base.h"
 
+#define INSTANCE_COUNT 5000000
 class GLTFLoader;
 
 using namespace std::chrono;
@@ -18,6 +19,7 @@ public:
 
 private:
     void createDescriptors();
+    void createInstances();
     void initDescriptorSets();
     void initMeshPipeline();
     void loadObj(const char *filePath);
@@ -48,12 +50,20 @@ private:
 
     AllocatedBuffer               vertexBuffer;
     AllocatedBuffer               indexBuffer;
+    AllocatedBuffer               instanceBuffer;
     uint32_t                      indexCount;
     AllocatedImage                texImage;
     MeshBuffers                   meshBuffer;
 
+    uint32_t ccCount;
+
     AllocatedBuffer               indirectBuffer;
     DrawIndexedIndirectCommand    indirectCommand;
+
+
+    std::vector<InstanceData> instances;
+    std::vector<VkVertexInputBindingDescription> vertexBindings;
+    std::vector<VkVertexInputAttributeDescription> vertexAttributes;
 
     steady_clock::time_point      lastFrameTime;
     bool                          firstFrame {true};

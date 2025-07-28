@@ -7,13 +7,14 @@
 #include <stb_image.h>
 
 #define TINYOBJLOADER_IMPLEMENTATION
+#include <iostream>
 #include <tiny_obj_loader.h>
 
 Mesh::Mesh(uint32_t _width, uint32_t _height, const char* _windowName)
     : Base(_width, _height, _windowName) {
 
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    initCamera(0.0f, 3.0f, 5.0f);
+    initCamera(0.0f, 100.0f, 200.0f);
     initDepthImage();
     createDescriptors();
     initMeshPipeline();
@@ -21,6 +22,9 @@ Mesh::Mesh(uint32_t _width, uint32_t _height, const char* _windowName)
     loadObj("../assets/grass/Grass_Block.obj");
     loadTextureImage("../assets/grass/Grass_Block_TEX.png");
     initDescriptorSets();
+
+    createInstances();
+
     createIndirectBuffer();
 }
 
@@ -47,6 +51,80 @@ void Mesh::createDescriptors() {
     vkCreateSampler(device, &sampler, nullptr, &texSampler);
 }
 
+void Mesh::createInstances() {
+    instances.clear();
+    instances.reserve(INSTANCE_COUNT);
+
+    // Calculate grid dimensions for ~5 million instances
+    // 171^3 = 5,000,211 (very close to 5 million)
+    const int gridSize = 171;
+
+    // Very tight spacing and tiny cubes
+    const float spacing = 0.5f;
+    const float gridOffset = (gridSize - 1) * spacing * 0.5f;
+    const float cubeScale = 0.3f;  // Very small cubes
+
+    std::cout << "Creating " << INSTANCE_COUNT << " instances..." << std::endl;
+
+    int instanceCount = 0;
+    for (int x = 0; x < gridSize && instanceCount < INSTANCE_COUNT; x++) {
+        for (int y = 0; y < gridSize && instanceCount < INSTANCE_COUNT; y++) {
+            for (int z = 0; z < gridSize && instanceCount < INSTANCE_COUNT; z++) {
+                InstanceData instance{};
+
+                instance.position = glm::vec3(
+                    x * spacing - gridOffset,
+                    y * spacing - gridOffset,
+                    z * spacing - gridOffset
+                );
+
+                instance.scale = cubeScale;
+
+                instances.push_back(instance);
+                instanceCount++;
+            }
+        }
+    }
+    ccCount = static_cast<uint32_t>(instances.size());
+
+
+    std::cout << "Created " << instances.size() << " instances" << std::endl;
+    std::cout << "Instance buffer size: " << (instances.size() * sizeof(InstanceData) / (1024.0 * 1024.0)) << " MB" << std::endl;
+
+    // Create instance buffer
+    size_t bufferSize = instances.size() * sizeof(InstanceData);
+
+    instanceBuffer = createAllocatedBuffer(
+        bufferSize,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY
+    );
+
+    // Use larger staging buffer and copy in chunks if needed
+    AllocatedBuffer staging = createAllocatedBuffer(
+        bufferSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VMA_MEMORY_USAGE_CPU_TO_GPU
+    );
+
+    void* data;
+    vmaMapMemory(allocator, staging.allocation, &data);
+    memcpy(data, instances.data(), bufferSize);
+    vmaUnmapMemory(allocator, staging.allocation);
+
+    immediateSubmit([&](VkCommandBuffer cmd) {
+        VkBufferCopy copy{};
+        copy.size = bufferSize;
+        vkCmdCopyBuffer(cmd, staging.buffer, instanceBuffer.buffer, 1, &copy);
+    });
+
+    vmaDestroyBuffer(allocator, staging.buffer, staging.allocation);
+
+    // Clear CPU-side data to save memory if not needed
+    instances.clear();
+    instances.shrink_to_fit();
+}
+
 void Mesh::initDescriptorSets() {
     for (uint32_t i = 0; i < MAX_FRAMES; i++) {
         imageDescriptorSets[i] = frames[i]._frameDescriptors.allocate(device, meshDescriptorLayout);
@@ -60,7 +138,7 @@ void Mesh::initDescriptorSets() {
 
 void Mesh::initMeshPipeline() {
     VkShaderModule vertShader { VK_NULL_HANDLE };
-    vertShader = loadShader(device, "../shaders/mesh.vert.spv");
+    vertShader = loadShader(device, "../shaders/mesh.vert.spv");  // Use instanced shader
     assert(vertShader);
 
     VkShaderModule fragShader { VK_NULL_HANDLE };
@@ -83,17 +161,37 @@ void Mesh::initMeshPipeline() {
 
     VK_CHECK(vkCreatePipelineLayout(device, &info, nullptr, &meshPipelineLayout));
 
+    vertexBindings = {
+        {0, sizeof(InstanceData), VK_VERTEX_INPUT_RATE_INSTANCE}
+    };
+
+    vertexAttributes = {
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(InstanceData, position)},
+        {1, 0, VK_FORMAT_R32_SFLOAT, offsetof(InstanceData, scale)},
+    };
+
+
     PipelineBuilder pipelineBuilder;
     pipelineBuilder.pipelineLayout = meshPipelineLayout;
     pipelineBuilder.setShaders(vertShader, fragShader);
     pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
-    pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
     pipelineBuilder.setMultisamplingNone();
     pipelineBuilder.disableBlending();
     pipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_LESS);
     pipelineBuilder.setColorAttachmentFormat(VK_FORMAT_B8G8R8A8_SRGB);
     pipelineBuilder.setDepthFormat(VK_FORMAT_D32_SFLOAT);
+
+    // Add vertex input state for instancing
+    pipelineBuilder.vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    pipelineBuilder.vertexInputInfo.pNext = nullptr;
+    pipelineBuilder.vertexInputInfo.flags = 0;
+    pipelineBuilder.vertexInputInfo.vertexBindingDescriptionCount = vertexBindings.size();
+    pipelineBuilder.vertexInputInfo.pVertexBindingDescriptions = vertexBindings.data();
+    pipelineBuilder.vertexInputInfo.vertexAttributeDescriptionCount = vertexAttributes.size();
+    pipelineBuilder.vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes.data();
+
 
     meshPipeline = pipelineBuilder.buildPipeline(device);
 
@@ -293,7 +391,7 @@ void Mesh::loadTextureImage(const char *filePath) {
 
 void Mesh::createIndirectBuffer() {
     indirectCommand.indexCount = indexCount;
-    indirectCommand.instanceCount = 1;
+    indirectCommand.instanceCount = ccCount;
     indirectCommand.firstIndex = 0;
     indirectCommand.vertexOffset = 0;
     indirectCommand.firstInstance = 0;
@@ -341,6 +439,10 @@ void Mesh::recordCommands(VkCommandBuffer cmd, uint32_t frameNumber, VkImageView
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
+
+    // Bind instance buffer (no vertex buffer needed with buffer device address)
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &instanceBuffer.buffer, &offset);
 
     vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
@@ -480,6 +582,7 @@ Mesh::~Mesh() {
     vmaDestroyBuffer(allocator, vertexBuffer.buffer, vertexBuffer.allocation);
     vmaDestroyBuffer(allocator, indexBuffer.buffer, indexBuffer.allocation);
     vmaDestroyBuffer(allocator, indirectBuffer.buffer, indirectBuffer.allocation);
+    vmaDestroyBuffer(allocator, instanceBuffer.buffer, instanceBuffer.allocation);
 
     vkDestroyDescriptorSetLayout(device, meshDescriptorLayout, nullptr);
     vkDestroyPipelineLayout(device, meshPipelineLayout, nullptr);

@@ -487,8 +487,6 @@ VkPipeline PipelineBuilder::buildPipeline(VkDevice device) {
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &colorBlendAttachment;
 
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
-
     VkGraphicsPipelineCreateInfo graphicsPipelineInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
     graphicsPipelineInfo.pNext = &renderInfo;
     graphicsPipelineInfo.stageCount = (uint32_t)shaderStages.size();

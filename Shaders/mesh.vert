@@ -14,6 +14,10 @@ layout(buffer_reference, std430) readonly buffer VertexBuffer {
     Vertex vertices[];
 };
 
+// Updated instance attributes
+layout(location = 0) in vec3 instancePos;
+layout(location = 1) in float instanceScale;  // Now just a float
+
 layout(push_constant) uniform PushConstants {
     mat4 worldMatrix;
     VertexBuffer vertexBuffer;
@@ -25,7 +29,10 @@ layout(location = 1) out vec2 fragTexCoord;
 void main() {
     Vertex v = pushConstants.vertexBuffer.vertices[gl_VertexIndex];
 
-    gl_Position = pushConstants.worldMatrix * vec4(v.position, 1.0);
+    // Apply uniform scale
+    vec3 worldPos = v.position * instanceScale + instancePos;
+
+    gl_Position = pushConstants.worldMatrix * vec4(worldPos, 1.0);
     fragColor = v.color;
     fragTexCoord = vec2(v.uv_x, v.uv_y);
 }

@@ -93,6 +93,7 @@ struct PipelineBuilder {
     VkPipelineDepthStencilStateCreateInfo depthStencil;
     VkPipelineRenderingCreateInfo renderInfo;
     VkFormat colorAttachmentFormat;
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo;
 
     PipelineBuilder() { clear(); }
 
@@ -271,3 +272,7 @@ struct FrameTimings {
     float total;
 };
 
+struct InstanceData {
+    glm::vec3 position;
+    float scale;
+};
