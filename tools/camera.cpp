@@ -88,3 +88,67 @@ void Camera::update() {
 
     position += (forward + right + up) * 0.5f;
 }
+
+void Camera::updateFrustum(const glm::mat4& proj) {
+    glm::mat4 view = getViewMatrix();
+    glm::mat4 projMat = proj;
+
+    projMat[1][1] *= -1;
+
+    cullData.viewProj = projMat * view;
+
+    auto& viewProj = cullData.viewProj;
+
+    // L
+    cullData.frustumPlanes[0] = glm::vec4(
+            viewProj[0][3] + viewProj[0][0],
+            viewProj[1][3] + viewProj[1][0],
+            viewProj[2][3] + viewProj[2][0],
+            viewProj[3][3] + viewProj[3][0]
+        );
+
+    // R
+    cullData.frustumPlanes[1] = glm::vec4(
+        viewProj[0][3] - viewProj[0][0],
+        viewProj[1][3] - viewProj[1][0],
+        viewProj[2][3] - viewProj[2][0],
+        viewProj[3][3] - viewProj[3][0]
+    );
+
+    // B
+    cullData.frustumPlanes[2] = glm::vec4(
+        viewProj[0][3] + viewProj[0][1],
+        viewProj[1][3] + viewProj[1][1],
+        viewProj[2][3] + viewProj[2][1],
+        viewProj[3][3] + viewProj[3][1]
+    );
+
+    // T
+    cullData.frustumPlanes[3] = glm::vec4(
+        viewProj[0][3] - viewProj[0][1],
+        viewProj[1][3] - viewProj[1][1],
+        viewProj[2][3] - viewProj[2][1],
+        viewProj[3][3] - viewProj[3][1]
+    );
+
+    // N
+    cullData.frustumPlanes[4] = glm::vec4(
+        viewProj[0][3] + viewProj[0][2],
+        viewProj[1][3] + viewProj[1][2],
+        viewProj[2][3] + viewProj[2][2],
+        viewProj[3][3] + viewProj[3][2]
+    );
+
+    // F
+    cullData.frustumPlanes[5] = glm::vec4(
+        viewProj[0][3] - viewProj[0][2],
+        viewProj[1][3] - viewProj[1][2],
+        viewProj[2][3] - viewProj[2][2],
+        viewProj[3][3] - viewProj[3][2]
+    );
+
+    for (int i = 0; i < 6; i++) {
+        float len = glm::length(glm::vec3(cullData.frustumPlanes[i]));
+        cullData.frustumPlanes[i] /= len;
+    }
+}

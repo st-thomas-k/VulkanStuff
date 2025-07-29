@@ -277,3 +277,15 @@ struct InstanceData {
     glm::vec3 position;
     float scale;
 };
+
+struct CullData{
+    glm::mat4 viewProj;
+    glm::vec4 frustumPlanes[6]; // L, R, B, T, N, F
+};
+
+struct CullStats {
+    uint32_t visibleCount;
+    uint32_t occludedCount;
+    uint32_t totalCount;
+};
+

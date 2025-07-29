@@ -83,7 +83,7 @@ void Base::initDepthImage() {
     };
 
     depthImage = createAllocatedImage(depthImageExtent, VK_FORMAT_D32_SFLOAT,
-                                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, false);
+                                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, false);
 
     immediateSubmit([&](VkCommandBuffer cmd) {
         VkImageMemoryBarrier barrier{};
@@ -300,14 +300,12 @@ void Base::immediateSubmit(std::function<void(VkCommandBuffer cmd)> &&function) 
 }
 
 void Base::beginCommands(VkCommandBuffer cmd, VkImageView swapchainImageView) {
-    VkClearValue colorClear;
-    colorClear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    VkClearValue clearValues[2];
+    clearValues[0].color = {{ 0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[1].depthStencil = {1.0f, 0};
 
-    VkClearValue depthClear;
-    depthClear.depthStencil = {1.0f, 0};
-
-    VkRenderingAttachmentInfo colorAttachment = getColorAttachment(swapchainImageView, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    VkRenderingAttachmentInfo depthAttachment = getDepthAttachment(depthImage.imageView, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    VkRenderingAttachmentInfo colorAttachment = getColorAttachment(swapchainImageView, &clearValues[0], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    VkRenderingAttachmentInfo depthAttachment = getDepthAttachment(depthImage.imageView, &clearValues[1], VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
     VkRenderingInfo renderInfo = getRenderingInfo(swapchain.swapchainExtent, &colorAttachment, &depthAttachment);
 

@@ -48,9 +48,6 @@ VkCommandBufferSubmitInfo submitCommandBufferInfo(VkCommandBuffer cmd);
 VkSubmitInfo2 submitInfo(VkCommandBufferSubmitInfo* cmd, VkSemaphoreSubmitInfo* signalSemaphoreInfo,
     VkSemaphoreSubmitInfo* waitSemaphoreInfo);
 
-AllocatedBuffer createBuffer(VmaAllocator allocator, size_t allocSize, VkBufferUsageFlags usageFlags, VmaMemoryUsage memoryUsage);
-void destroyBuffer(VmaAllocator allocator, AllocatedBuffer &buffer);
-
 void transitionImage(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout);
 void copyImageToImage(VkCommandBuffer cmd, VkImage source, VkImage destination, VkExtent2D srcSize,
     VkExtent2D dstSize);

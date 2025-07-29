@@ -16,19 +16,23 @@ Mesh::Mesh(uint32_t _width, uint32_t _height, const char* _windowName)
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     initCamera(0.0f, 50.0f, 100.0f);
     initDepthImage();
-    createDescriptors();
-    initMeshPipeline();
+
 
     loadObj("../assets/grass/Grass_Block.obj");
     loadTextureImage("../assets/grass/Grass_Block_TEX.png");
-    initDescriptorSets();
 
     createInstances();
-
+    createCullBuffers();
     createIndirectBuffer();
+
+    initDescriptorSets();
+
+    initMeshPipeline();
+    initCullPipeline();
 }
 
-void Mesh::createDescriptors() {
+void Mesh::initDescriptorSets() {
+    // texture descriptor set
     {
         DescriptorLayout builder;
         builder.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -51,6 +55,48 @@ void Mesh::createDescriptors() {
     sampler.compareOp = VK_COMPARE_OP_ALWAYS;
 
     VK_CHECK(vkCreateSampler(device, &sampler, nullptr, &texSampler));
+
+    std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = {
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1.0f },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1.0f },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1.0f }
+    };
+
+
+    // tex descriptor set is the same for every instance.
+    // just allocate them to each frame ig.
+    for (uint32_t i = 0; i < MAX_FRAMES; i++) {
+        frames[i]._frameDescriptors.init(device, 10, sizes);
+
+        imageDescriptorSets[i] = frames[i]._frameDescriptors.allocate(device, meshDescriptorLayout);
+        DescriptorWriter writer;
+        writer.writeImage(0, texImage.imageView, texSampler,
+                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        writer.updateSet(device, imageDescriptorSets[i]);
+    }
+
+    // cull descriptor set
+    {
+        DescriptorLayout builder;
+        builder.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        builder.addBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        builder.addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        builder.addBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        builder.addBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        cullDescriptorLayout = builder.build(device, VK_SHADER_STAGE_COMPUTE_BIT);
+    }
+
+    for (uint32_t i = 0; i < MAX_FRAMES; i++) {
+        cullDescriptorSets[i] = frames[i]._frameDescriptors.allocate(device, cullDescriptorLayout);
+        DescriptorWriter writer;
+        writer.writeBuffer(0, cullDataBuffers[i].buffer, sizeof(CullData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        writer.writeBuffer(1, instanceBuffer.buffer, trueInstanceCount * sizeof(InstanceData), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.writeBuffer(2, indirectBuffer.buffer, sizeof(DrawIndexedIndirectCommand), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.writeBuffer(3, cullStatsBuffers[i].buffer, sizeof(CullStats), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.writeBuffer(4, visibilityBuffer.buffer, trueInstanceCount * sizeof(uint32_t), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.updateSet(device, cullDescriptorSets[i]);
+    }
 }
 
 void Mesh::createInstances() {
@@ -89,7 +135,7 @@ void Mesh::createInstances() {
 
     instanceBuffer = createAllocatedBuffer(
         bufferSize,
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VMA_MEMORY_USAGE_GPU_ONLY
     );
 
@@ -117,17 +163,26 @@ void Mesh::createInstances() {
     instances.shrink_to_fit();
 }
 
-void Mesh::initDescriptorSets() {
-    // descriptor set is the same since one object.
-    // just allocate them to each frame ig.
+void Mesh::createCullBuffers() {
     for (uint32_t i = 0; i < MAX_FRAMES; i++) {
-        imageDescriptorSets[i] = frames[i]._frameDescriptors.allocate(device, meshDescriptorLayout);
-        DescriptorWriter writer;
-        writer.writeImage(0, texImage.imageView, texSampler,
-                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-        writer.updateSet(device, imageDescriptorSets[i]);
+        cullDataBuffers[i] = createAllocatedBuffer(sizeof(CullData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VMA_MEMORY_USAGE_CPU_TO_GPU);
+        cullStatsBuffers[i] = createAllocatedBuffer(sizeof(CullStats),
+   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+   VMA_MEMORY_USAGE_GPU_TO_CPU);
+
+        CullStats initialStats = {0, trueInstanceCount};
+        void* data;
+        vmaMapMemory(allocator, cullStatsBuffers[i].allocation, &data);
+        memcpy(data, &initialStats, sizeof(CullStats));
+        vmaUnmapMemory(allocator, cullStatsBuffers[i].allocation);
     }
+
+    size_t visibilityBufferSize = trueInstanceCount * sizeof(uint32_t);
+    visibilityBuffer = createAllocatedBuffer(visibilityBufferSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY);
+
 }
 
 void Mesh::initMeshPipeline() {
@@ -165,16 +220,15 @@ void Mesh::initMeshPipeline() {
         {1, 0, VK_FORMAT_R32_SFLOAT, offsetof(InstanceData, scale)},
     };
 
-
     PipelineBuilder pipelineBuilder;
     pipelineBuilder.pipelineLayout = meshPipelineLayout;
     pipelineBuilder.setShaders(vertShader, fragShader);
     pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
-    pipelineBuilder.setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+    pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
     pipelineBuilder.setMultisamplingSampleRate(0.20f);
     pipelineBuilder.disableBlending();
-    pipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_LESS);
+    pipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_LESS_OR_EQUAL);
     pipelineBuilder.setColorAttachmentFormat(VK_FORMAT_B8G8R8A8_SRGB);
     pipelineBuilder.setDepthFormat(VK_FORMAT_D32_SFLOAT);
 
@@ -191,6 +245,36 @@ void Mesh::initMeshPipeline() {
 
     vkDestroyShaderModule(device, fragShader, nullptr);
     vkDestroyShaderModule(device, vertShader, nullptr);
+}
+
+void Mesh::initCullPipeline() {
+    VkShaderModule cullShader;
+    cullShader = loadShader(device, "../shaders/cull.comp.glsl.spv");
+    assert(cullShader);
+
+    VkPipelineLayoutCreateInfo info {};
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    info.pNext = nullptr;
+    info.flags = 0;
+    info.pSetLayouts = &cullDescriptorLayout;
+    info.setLayoutCount = 1;
+
+    VK_CHECK(vkCreatePipelineLayout(device, &info, nullptr, &cullPipelineLayout));
+
+    VkPipelineShaderStageCreateInfo stageInfo = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
+    stageInfo.pNext = nullptr;
+    stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageInfo.module = cullShader;
+    stageInfo.pName = "main";
+
+    VkComputePipelineCreateInfo pipelineInfo = { VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
+    pipelineInfo.pNext = nullptr;
+    pipelineInfo.layout = cullPipelineLayout;
+    pipelineInfo.stage = stageInfo;
+
+    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &cullPipeline));
+
+    vkDestroyShaderModule(device, cullShader, nullptr);
 }
 
 void Mesh::loadObj(const char *filePath) {
@@ -295,11 +379,8 @@ void Mesh::loadTextureImage(const char *filePath) {
      int texWidth, texHeight, texChannels;
 
     stbi_uc* pixels = stbi_load(filePath, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-
     uint64_t imageSize = texWidth * texHeight * 4;
-
     uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
-    std::cout << "Creating texture with " << mipLevels << " mip levels" << std::endl;
 
     VkBuffer stagingBuffer;
     VmaAllocation stagingAllocation;
@@ -369,13 +450,91 @@ void Mesh::loadTextureImage(const char *filePath) {
 
         vkCmdCopyBufferToImage(cmd, stagingBuffer, texImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-        // FIXED: Generate mipmaps BEFORE final transition
-        // The createMipmaps function will handle the final transition to SHADER_READ_ONLY_OPTIMAL
         createMipmaps(cmd, texImage.image, VK_FORMAT_R8G8B8A8_SRGB, texWidth, texHeight, mipLevels);
     });
 
     vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+}
 
+void Mesh::createMipmaps(VkCommandBuffer cmd, VkImage image, VkFormat imageFormat,
+                        int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
+    VkFormatProperties formatProperties;
+    vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, &formatProperties);
+
+    if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+        throw std::runtime_error("Texture image format does not support linear blitting!");
+    }
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.image = image;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.levelCount = 1;
+
+    int32_t mipWidth = texWidth;
+    int32_t mipHeight = texHeight;
+
+    for (uint32_t i = 1; i < mipLevels; i++) {
+        barrier.subresourceRange.baseMipLevel = i - 1;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+            0, nullptr, 0, nullptr, 1, &barrier);
+
+        VkImageBlit blit{};
+        blit.srcOffsets[0] = {0, 0, 0};
+        blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
+        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.srcSubresource.mipLevel = i - 1;
+        blit.srcSubresource.baseArrayLayer = 0;
+        blit.srcSubresource.layerCount = 1;
+
+        int32_t nextMipWidth = mipWidth > 1 ? mipWidth / 2 : 1;
+        int32_t nextMipHeight = mipHeight > 1 ? mipHeight / 2 : 1;
+
+        blit.dstOffsets[0] = {0, 0, 0};
+        blit.dstOffsets[1] = {nextMipWidth, nextMipHeight, 1};
+        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.dstSubresource.mipLevel = i;
+        blit.dstSubresource.baseArrayLayer = 0;
+        blit.dstSubresource.layerCount = 1;
+
+        vkCmdBlitImage(cmd,
+            image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1, &blit, VK_FILTER_LINEAR);
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+            0, nullptr, 0, nullptr, 1, &barrier);
+
+        mipWidth = nextMipWidth;
+        mipHeight = nextMipHeight;
+    }
+
+    // Transition the last mip level
+    barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+        0, nullptr, 0, nullptr, 1, &barrier);
 }
 
 void Mesh::createIndirectBuffer() {
@@ -392,7 +551,7 @@ void Mesh::createIndirectBuffer() {
         VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
         VK_BUFFER_USAGE_TRANSFER_DST_BIT |
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        VMA_MEMORY_USAGE_GPU_ONLY
+        VMA_MEMORY_USAGE_CPU_TO_GPU
     );
 
     AllocatedBuffer staging = createAllocatedBuffer(
@@ -446,25 +605,20 @@ void Mesh::recordCommands(VkCommandBuffer cmd, uint32_t frameNumber, VkImageView
                                    0, 1, &imageDescriptorSets[frameIndex], 0, nullptr);
 
     // use draw params on GPU to render all blocks.
-    // no need to iterate 0 -> object count. one call.
+    // no need to iterate 0 -> object count. one call very nice.
     vkCmdDrawIndexedIndirect(cmd, indirectBuffer.buffer, 0, 1, sizeof(DrawIndexedIndirectCommand));
 
     endCommands(cmd);
 }
 
 void Mesh::drawFrame() {
-    auto frameStart = std::chrono::high_resolution_clock::now();
-
     uint32_t frameIndex = currentFrame % MAX_FRAMES;
     FrameData& frame = frames[frameIndex];
 
-    auto currentTime = steady_clock::now();
-    float deltaTime = duration<float>(currentTime - lastFrameTime).count();
-    lastFrameTime = currentTime;
-
     camera.processEvent(window);
     camera.velocity *= 0.1f;
-    camera.update();
+
+    updatePerFrameData(frameIndex);
 
     VK_CHECK(vkWaitForFences(device, 1, &frame.renderFence, VK_TRUE, UINT64_MAX));
 
@@ -480,10 +634,27 @@ void Mesh::drawFrame() {
 
     VK_CHECK(vkBeginCommandBuffer(frame.commandBuffer, &beginInfo));
 
+    vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, cullPipeline);
+    vkCmdBindDescriptorSets(frame.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                           cullPipelineLayout, 0, 1,
+                           &cullDescriptorSets[frameIndex], 0, nullptr);
+
+
+    uint32_t workgroupCount = (trueInstanceCount + 63) / 64;
+    vkCmdDispatch(frame.commandBuffer, workgroupCount, 1, 1);
+
+    VkMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    vkCmdPipelineBarrier(frame.commandBuffer,
+                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                        0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+
+
     transitionImage(frame.commandBuffer, swapchain.images[swapchainImageIndex],
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-
-    updateTransformMatrix();
 
     recordCommands(frame.commandBuffer, frameIndex, swapchain.imageViews[swapchainImageIndex]);
 
@@ -518,6 +689,10 @@ void Mesh::drawFrame() {
 
     VK_CHECK(vkQueueSubmit2(graphicsQueue, 1, &submitInfo, frame.renderFence));
 
+    if (currentFrame % 60 == 0) {  // Every 60 frames
+        readCullStats(frameIndex);
+    }
+
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
@@ -531,10 +706,19 @@ void Mesh::drawFrame() {
     currentFrame++;
 }
 
-void Mesh::updateTransformMatrix() {
-    glm::mat4 model = glm::mat4(1.0f);
+void Mesh::updateCullData(uint32_t frameIndex) {
+    auto data = camera.getFrustumData();
 
-    glm::mat4 view = camera.getViewMatrix();
+    void* mapped;
+    vmaMapMemory(allocator, cullDataBuffers[frameIndex].allocation, &mapped);
+    memcpy(mapped, &data, sizeof(CullData));
+    vmaUnmapMemory(allocator, cullDataBuffers[frameIndex].allocation);
+}
+
+void Mesh::updatePerFrameData(uint32_t frameIndex) {
+    camera.update();
+
+    glm::mat4 model = glm::mat4(1.0f);
 
     glm::mat4 proj = glm::perspective(
         glm::radians(70.0f),
@@ -542,92 +726,22 @@ void Mesh::updateTransformMatrix() {
         0.1f, 10000.0f
     );
 
-    proj[1][1] *= -1;
+    camera.updateFrustum(proj);
+    updateCullData(frameIndex);
 
-    transform = proj * view * model;
+    transform = camera.getFrustumData().viewProj * model;
 }
 
-void Mesh::createMipmaps(VkCommandBuffer cmd, VkImage image, VkFormat imageFormat,
-                        int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
-   // Check format support
-    VkFormatProperties formatProperties;
-    vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, &formatProperties);
+void Mesh::readCullStats(uint32_t frameIndex) {
+    CullStats stats;
+    void* data;
+    vmaMapMemory(allocator, cullStatsBuffers[frameIndex].allocation, &data);
+    memcpy(&stats, data, sizeof(CullStats));
+    vmaUnmapMemory(allocator, cullStatsBuffers[frameIndex].allocation);
 
-    if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-        throw std::runtime_error("Texture image format does not support linear blitting!");
-    }
-
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.image = image;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.subresourceRange.levelCount = 1;
-
-    int32_t mipWidth = texWidth;
-    int32_t mipHeight = texHeight;
-
-    for (uint32_t i = 1; i < mipLevels; i++) {
-        barrier.subresourceRange.baseMipLevel = i - 1;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-
-        vkCmdPipelineBarrier(cmd,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-            0, nullptr, 0, nullptr, 1, &barrier);
-
-        VkImageBlit blit{};
-        blit.srcOffsets[0] = {0, 0, 0};
-        blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
-        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        blit.srcSubresource.mipLevel = i - 1;
-        blit.srcSubresource.baseArrayLayer = 0;
-        blit.srcSubresource.layerCount = 1;
-
-        int32_t nextMipWidth = mipWidth > 1 ? mipWidth / 2 : 1;
-        int32_t nextMipHeight = mipHeight > 1 ? mipHeight / 2 : 1;
-
-        blit.dstOffsets[0] = {0, 0, 0};
-        blit.dstOffsets[1] = {nextMipWidth, nextMipHeight, 1};
-        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        blit.dstSubresource.mipLevel = i;
-        blit.dstSubresource.baseArrayLayer = 0;
-        blit.dstSubresource.layerCount = 1;
-
-        // IMPROVEMENT 3: Use VK_FILTER_LINEAR for highest quality downsampling
-        vkCmdBlitImage(cmd,
-            image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            1, &blit, VK_FILTER_LINEAR);
-
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-        vkCmdPipelineBarrier(cmd,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-            0, nullptr, 0, nullptr, 1, &barrier);
-
-        mipWidth = nextMipWidth;
-        mipHeight = nextMipHeight;
-    }
-
-    // Transition the last mip level
-    barrier.subresourceRange.baseMipLevel = mipLevels - 1;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-    vkCmdPipelineBarrier(cmd,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-        0, nullptr, 0, nullptr, 1, &barrier);
+    std::cout << "Inside Frustum: " << stats.visibleCount
+              << " / " << stats.totalCount
+              << " (" << (100.0f * stats.visibleCount / stats.totalCount) << "%)" << std::endl;
 }
 
 void Mesh::run() {
@@ -654,12 +768,23 @@ Mesh::~Mesh() {
 
     vkDestroySampler(device, texSampler, nullptr);
 
+    for (uint32_t i = 0; i < MAX_FRAMES; i++) {
+        frames[i]._frameDescriptors.destroy_pools(device);
+        vmaDestroyBuffer(allocator, cullDataBuffers[i].buffer, cullDataBuffers[i].allocation);
+        vmaDestroyBuffer(allocator, cullStatsBuffers[i].buffer, cullStatsBuffers[i].allocation);
+
+    }
     vmaDestroyBuffer(allocator, vertexBuffer.buffer, vertexBuffer.allocation);
     vmaDestroyBuffer(allocator, indexBuffer.buffer, indexBuffer.allocation);
     vmaDestroyBuffer(allocator, indirectBuffer.buffer, indirectBuffer.allocation);
     vmaDestroyBuffer(allocator, instanceBuffer.buffer, instanceBuffer.allocation);
+    vmaDestroyBuffer(allocator, visibilityBuffer.buffer, visibilityBuffer.allocation);
 
     vkDestroyDescriptorSetLayout(device, meshDescriptorLayout, nullptr);
     vkDestroyPipelineLayout(device, meshPipelineLayout, nullptr);
     vkDestroyPipeline(device, meshPipeline, nullptr);
+
+    vkDestroyDescriptorSetLayout(device, cullDescriptorLayout, nullptr);
+    vkDestroyPipelineLayout(device, cullPipelineLayout, nullptr);
+    vkDestroyPipeline(device, cullPipeline, nullptr);
 }
