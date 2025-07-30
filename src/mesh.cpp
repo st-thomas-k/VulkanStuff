@@ -11,16 +11,15 @@ Mesh::Mesh(uint32_t _width, uint32_t _height, const char* _windowName)
     : Base(_width, _height, _windowName) {
 
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    initCamera(0.0f, 50.0f, 100.0f);
+    initCamera(0.0f, 20.0f, 50.0f);
     initDepthImage();
 
-
-    loadObj("../assets/grass/Grass_Block.obj");
-    textureImage = loadTextureImage("../assets/grass/Grass_Block_TEX.png");
+    loadObj("../assets/cat/catn0.obj");
+    textureImage = loadTextureImage("../assets/cat/cat_text_m.jpg");
 
     createInstances();
     createCullBuffers();
-    createIndirectBuffer();
+    createIndirectCmdBuffer();
 
     initDescriptorSets();
 
@@ -79,7 +78,6 @@ void Mesh::initDescriptorSets() {
         builder.addBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         builder.addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         builder.addBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        builder.addBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         cullDescriptorLayout = builder.build(device, VK_SHADER_STAGE_COMPUTE_BIT);
     }
 
@@ -87,22 +85,21 @@ void Mesh::initDescriptorSets() {
         cullDescriptorSets[i] = frames[i]._frameDescriptors.allocate(device, cullDescriptorLayout);
         DescriptorWriter writer;
         writer.writeBuffer(0, cullDataBuffers[i].buffer, sizeof(CullData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-        writer.writeBuffer(1, instanceBuffer.buffer, trueInstanceCount * sizeof(InstanceData), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        writer.writeBuffer(2, indirectBuffer.buffer, sizeof(DrawIndexedIndirectCommand), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.writeBuffer(1, instanceBuffer.buffer, sizeof(InstanceData) * trueInstanceCount, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        writer.writeBuffer(2, drawCmdBuffer.buffer, sizeof(DrawIndexedIndirectCommand) * trueInstanceCount, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         writer.writeBuffer(3, cullStatsBuffers[i].buffer, sizeof(CullStats), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        writer.writeBuffer(4, visibilityBuffer.buffer, trueInstanceCount * sizeof(uint32_t), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         writer.updateSet(device, cullDescriptorSets[i]);
     }
 }
 
 void Mesh::createInstances() {
     instances.clear();
-    instances.reserve(100000);
+    instances.reserve(8000);
 
-    const int gridX = 50;
-    const int gridY = 40;
-    const int gridZ = 50;
-    const float spacing = 0.6f;
+    const int gridX = 20;
+    const int gridY = 20;
+    const int gridZ = 20;
+    const float spacing = 5.0f;
     const float cubeScale = 0.3f;
 
     for (int x = 0; x < gridX; x++) {
@@ -167,18 +164,12 @@ void Mesh::createCullBuffers() {
    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
    VMA_MEMORY_USAGE_GPU_TO_CPU);
 
-        CullStats initialStats = {0, trueInstanceCount};
+        CullStats stats {0, 0, trueInstanceCount};
         void* data;
         vmaMapMemory(allocator, cullStatsBuffers[i].allocation, &data);
-        memcpy(data, &initialStats, sizeof(CullStats));
+        memcpy(data, &stats, sizeof(CullStats));
         vmaUnmapMemory(allocator, cullStatsBuffers[i].allocation);
     }
-
-    size_t visibilityBufferSize = trueInstanceCount * sizeof(uint32_t);
-    visibilityBuffer = createAllocatedBuffer(visibilityBufferSize,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        VMA_MEMORY_USAGE_GPU_ONLY);
-
 }
 
 void Mesh::initInstancePipeline() {
@@ -221,7 +212,7 @@ void Mesh::initInstancePipeline() {
     pipelineBuilder.setShaders(vertShader, fragShader);
     pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
-    pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+    pipelineBuilder.setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
     pipelineBuilder.setMultisamplingSampleRate(0.20f);
     pipelineBuilder.disableBlending();
     pipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_LESS_OR_EQUAL);
@@ -235,7 +226,6 @@ void Mesh::initInstancePipeline() {
     pipelineBuilder.vertexInputInfo.pVertexBindingDescriptions = vertexBindings.data();
     pipelineBuilder.vertexInputInfo.vertexAttributeDescriptionCount = vertexAttributes.size();
     pipelineBuilder.vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes.data();
-
 
     meshPipeline = pipelineBuilder.buildPipeline(device);
 
@@ -273,23 +263,25 @@ void Mesh::initCullPipeline() {
     vkDestroyShaderModule(device, cullShader, nullptr);
 }
 
+void Mesh::createIndirectCmdBuffer() {
+    drawIndirectCmds.resize(trueInstanceCount);
+    size_t bufferSize = sizeof(DrawIndexedIndirectCommand) * trueInstanceCount;
 
-void Mesh::createIndirectBuffer() {
-    indirectCommand.indexCount = indexCount;
-    indirectCommand.instanceCount = trueInstanceCount;
-    indirectCommand.firstIndex = 0;
-    indirectCommand.vertexOffset = 0;
-    indirectCommand.firstInstance = 0;
+    for (uint32_t i = 0; i < trueInstanceCount; i++) {
+        drawIndirectCmds[i].indexCount = indexCount;
+        drawIndirectCmds[i].instanceCount = 0;
+        drawIndirectCmds[i].firstIndex = 0;
+        drawIndirectCmds[i].vertexOffset = 0;
+        drawIndirectCmds[i].firstInstance = i;
+    }
 
-    size_t bufferSize = sizeof(DrawIndexedIndirectCommand);
-
-    indirectBuffer = createAllocatedBuffer(
-        bufferSize,
-        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        VMA_MEMORY_USAGE_CPU_TO_GPU
-    );
+    drawCmdBuffer = createAllocatedBuffer(
+       bufferSize,
+       VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+       VMA_MEMORY_USAGE_GPU_ONLY
+   );
 
     AllocatedBuffer staging = createAllocatedBuffer(
         bufferSize,
@@ -299,17 +291,26 @@ void Mesh::createIndirectBuffer() {
 
     void* data;
     vmaMapMemory(allocator, staging.allocation, &data);
-    memcpy(data, &indirectCommand, bufferSize);
+    memcpy(data, drawIndirectCmds.data(), bufferSize);
     vmaUnmapMemory(allocator, staging.allocation);
 
     immediateSubmit([&](VkCommandBuffer cmd) {
         VkBufferCopy copy{};
         copy.size = bufferSize;
-        vkCmdCopyBuffer(cmd, staging.buffer, indirectBuffer.buffer, 1, &copy);
+        vkCmdCopyBuffer(cmd, staging.buffer, drawCmdBuffer.buffer, 1, &copy);
+
+        VkMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+
+        vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 1, &barrier, 0, nullptr, 0, nullptr);
     });
 
     vmaDestroyBuffer(allocator, staging.buffer, staging.allocation);
-
 }
 
 void Mesh::recordCommands(VkCommandBuffer cmd, uint32_t frameNumber, VkImageView swapchainImageView) {
@@ -342,7 +343,7 @@ void Mesh::recordCommands(VkCommandBuffer cmd, uint32_t frameNumber, VkImageView
 
     // use draw params on GPU to render all blocks.
     // no need to iterate 0 -> object count. one call very nice.
-    vkCmdDrawIndexedIndirect(cmd, indirectBuffer.buffer, 0, 1, sizeof(DrawIndexedIndirectCommand));
+    vkCmdDrawIndexedIndirect(cmd, drawCmdBuffer.buffer, 0, trueInstanceCount, sizeof(DrawIndexedIndirectCommand));
 
     endCommands(cmd);
 }
@@ -352,7 +353,7 @@ void Mesh::drawFrame() {
     FrameData& frame = frames[frameIndex];
 
     camera.processEvent(window);
-    camera.velocity *= 0.1f;
+    camera.velocity *= 0.01f;
 
     updatePerFrameData(frameIndex);
 
@@ -380,7 +381,9 @@ void Mesh::drawFrame() {
                            &cullDescriptorSets[frameIndex], 0, nullptr);
 
 
-    uint32_t workgroupCount = (trueInstanceCount + 63) / 64;
+    // If your shader can handle different local sizes efficiently
+    uint32_t optimalLocalSize = 128; // or 256, depending on your GPU
+    uint32_t workgroupCount = (trueInstanceCount + optimalLocalSize - 1) / optimalLocalSize;
     vkCmdDispatch(frame.commandBuffer, workgroupCount, 1, 1);
 
     VkMemoryBarrier barrier = {};
@@ -424,9 +427,9 @@ void Mesh::drawFrame() {
 
     VK_CHECK(vkQueueSubmit2(graphicsQueue, 1, &submitInfo, frame.renderFence));
 
-    /*if (currentFrame % 60 == 0) {
+    if (currentFrame % 1000 == 0) {
         readCullStats(frameIndex);
-    }*/
+    }
 
     VkPresentInfoKHR presentInfo = getPresentInfoKHR(&frame.renderComplete, &swapchain.swapchain, swapchainImageIndex);
 
@@ -505,13 +508,12 @@ Mesh::~Mesh() {
         frames[i]._frameDescriptors.destroyPools(device);
         vmaDestroyBuffer(allocator, cullDataBuffers[i].buffer, cullDataBuffers[i].allocation);
         vmaDestroyBuffer(allocator, cullStatsBuffers[i].buffer, cullStatsBuffers[i].allocation);
-
     }
+
     vmaDestroyBuffer(allocator, vertexBuffer.buffer, vertexBuffer.allocation);
     vmaDestroyBuffer(allocator, indexBuffer.buffer, indexBuffer.allocation);
-    vmaDestroyBuffer(allocator, indirectBuffer.buffer, indirectBuffer.allocation);
+    vmaDestroyBuffer(allocator, drawCmdBuffer.buffer, drawCmdBuffer.allocation);
     vmaDestroyBuffer(allocator, instanceBuffer.buffer, instanceBuffer.allocation);
-    vmaDestroyBuffer(allocator, visibilityBuffer.buffer, visibilityBuffer.allocation);
 
     vkDestroyDescriptorSetLayout(device, meshDescriptorLayout, nullptr);
     vkDestroyPipelineLayout(device, meshPipelineLayout, nullptr);

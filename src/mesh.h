@@ -5,7 +5,7 @@
 #include <array>
 #include "../base/base.h"
 
-#define INSTANCE_COUNT 100000
+#define INSTANCE_COUNT 8000
 class GLTFLoader;
 
 using namespace std::chrono;
@@ -23,7 +23,7 @@ private:
     void initDescriptorSets();
     void initInstancePipeline();
     void initCullPipeline();
-    void createIndirectBuffer();
+    void createIndirectCmdBuffer();
     void recordCommands(VkCommandBuffer cmd, uint32_t frameNumber, VkImageView swapchainImageView);
     void drawFrame();
     void updateCullData(uint32_t frameIndex);
@@ -46,18 +46,16 @@ private:
     std::array<AllocatedBuffer, MAX_FRAMES> cullStatsBuffers;
     std::array<VkDescriptorSet, MAX_FRAMES> cullDescriptorSets;
 
-    AllocatedBuffer                         visibilityBuffer;
-
     VkSampler                  texSampler;
-    VkSampler                  depthSampler;
 
     glm::mat4                  transformMatrix;
     glm::mat4                  viewProj;
 
+    std::vector<DrawIndexedIndirectCommand> drawIndirectCmds;
     AllocatedBuffer            instanceBuffer;
     AllocatedImage             textureImage;
 
-    AllocatedBuffer            indirectBuffer;
+    AllocatedBuffer            drawCmdBuffer;
     DrawIndexedIndirectCommand indirectCommand;
 
     std::vector<InstanceData>                      instances;

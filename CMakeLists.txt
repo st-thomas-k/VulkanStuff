@@ -71,6 +71,8 @@ file(GLOB_RECURSE GLSL_SOURCE_FILES
         "${PROJECT_SOURCE_DIR}/shaders/*.glsl"
 )
 
+#add_compile_definitions(NDEBUG=1)
+
 find_program(GLSL_VALIDATOR glslangValidator HINTS /usr/bin /usr/local/bin $ENV{VULKAN_SDK}/Bin/ $ENV{VULKAN_SDK}/Bin32/)
 
 if(NOT GLSL_VALIDATOR)

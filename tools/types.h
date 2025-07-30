@@ -289,3 +289,7 @@ struct CullStats {
     uint32_t totalCount;
 };
 
+struct DrawCount {
+    uint32_t visibleCount;
+};
+

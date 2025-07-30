@@ -127,6 +127,7 @@ VkDevice createLogicalDevice(VkPhysicalDevice physicalDevice, QueueFamilyIndices
     VkPhysicalDeviceVulkan12Features features12 {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
     features12.bufferDeviceAddress = true;
     features12.descriptorIndexing = true;
+    features12.drawIndirectCount = true;
     features12.pNext = &features13;
 
     VkPhysicalDeviceFeatures2 features2 { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
