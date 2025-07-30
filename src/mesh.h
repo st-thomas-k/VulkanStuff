@@ -21,19 +21,14 @@ private:
     void createInstances();
     void createCullBuffers();
     void initDescriptorSets();
-    void initMeshPipeline();
+    void initInstancePipeline();
     void initCullPipeline();
-    void loadObj(const char *filePath);
-    void loadTextureImage(const char* filePath);
     void createIndirectBuffer();
     void recordCommands(VkCommandBuffer cmd, uint32_t frameNumber, VkImageView swapchainImageView);
     void drawFrame();
     void updateCullData(uint32_t frameIndex);
-    void updatePerFrameData(uint32_t frameIndex);
+    void updatePerFrameData(uint32_t frameIndex) override;
     void readCullStats(uint32_t frameIndex);
-    void debugIndirectBuffer(VkCommandBuffer cmd);
-    void createMipmaps(VkCommandBuffer cmd, VkImage image, VkFormat imageFormat,
-                          int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 
     VkPipelineLayout              meshPipelineLayout;
     VkPipeline                    meshPipeline;
@@ -42,7 +37,6 @@ private:
     VkPipeline                    cullPipeline;
 
     MeshPushConstants             pushConstants;
-    glm::mat4                     transform;
 
     VkDescriptorSetLayout                   meshDescriptorLayout;
     std::array<VkDescriptorSet, MAX_FRAMES> imageDescriptorSets;
@@ -54,26 +48,22 @@ private:
 
     AllocatedBuffer                         visibilityBuffer;
 
-    VkSampler                     texSampler;
-    VkSampler                     depthSampler;
+    VkSampler                  texSampler;
+    VkSampler                  depthSampler;
 
-    glm::mat4                     transformMatrix;
-    glm::mat4                     viewProj;
+    glm::mat4                  transformMatrix;
+    glm::mat4                  viewProj;
 
-    AllocatedBuffer               vertexBuffer;
-    AllocatedBuffer               indexBuffer;
-    AllocatedBuffer               instanceBuffer;
-    uint32_t                      indexCount;
-    AllocatedImage                texImage;
+    AllocatedBuffer            instanceBuffer;
+    AllocatedImage             textureImage;
 
-    uint32_t                      trueInstanceCount;
-
-    AllocatedBuffer               indirectBuffer;
-    DrawIndexedIndirectCommand    indirectCommand;
+    AllocatedBuffer            indirectBuffer;
+    DrawIndexedIndirectCommand indirectCommand;
 
     std::vector<InstanceData>                      instances;
+    uint32_t                                       trueInstanceCount;
     std::vector<VkVertexInputBindingDescription>   vertexBindings;
     std::vector<VkVertexInputAttributeDescription> vertexAttributes;
 
-    uint32_t                      currentFrame { 0 };
+    uint32_t                   currentFrame { 0 };
 };

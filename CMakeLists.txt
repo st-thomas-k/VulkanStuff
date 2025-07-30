@@ -56,6 +56,7 @@ add_executable(${PROJECT_NAME} src/main.cpp
         tools/camera.h
         src/mesh.cpp
         src/mesh.h
+        tools/inits.h
 
 )
 

@@ -58,13 +58,13 @@ public:
     };
 
     void init(VkDevice device, uint32_t initialSets, std::span<PoolSizeRatio> poolRatios);
-    void clear_pools(VkDevice device);
-    void destroy_pools(VkDevice device);
+    void clearPools(VkDevice device);
+    void destroyPools(VkDevice device);
 
     VkDescriptorSet allocate(VkDevice device, VkDescriptorSetLayout layout, void* pNext = nullptr);
 private:
-    VkDescriptorPool get_pool(VkDevice device);
-    VkDescriptorPool create_pool(VkDevice device, uint32_t setCount, std::span<PoolSizeRatio> poolRatios);
+    VkDescriptorPool getPool(VkDevice device);
+    VkDescriptorPool createPool(VkDevice device, uint32_t setCount, std::span<PoolSizeRatio> poolRatios);
 
     std::vector<PoolSizeRatio> ratios;
     std::vector<VkDescriptorPool> fullPools;

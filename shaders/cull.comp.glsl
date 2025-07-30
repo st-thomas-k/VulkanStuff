@@ -73,5 +73,4 @@ void main() {
         atomicAdd(stats.culledCount, 1);
     }
 
-
 }

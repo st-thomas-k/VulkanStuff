@@ -41,39 +41,10 @@ namespace std {
 
 VkSemaphore createSemaphore(VkDevice device, VkSemaphoreCreateFlags flags = 0);
 VkFence createFence(VkDevice device, VkFenceCreateFlags flags = 0);
-VkSemaphoreSubmitInfo semaphoreSubmitInfo(VkPipelineStageFlags2 stageMask, VkSemaphore semaphore);
-
-VkCommandBufferBeginInfo commandBufferBeginInfo(VkCommandBufferUsageFlags flags = 0);
-VkCommandBufferSubmitInfo submitCommandBufferInfo(VkCommandBuffer cmd);
-VkSubmitInfo2 submitInfo(VkCommandBufferSubmitInfo* cmd, VkSemaphoreSubmitInfo* signalSemaphoreInfo,
-    VkSemaphoreSubmitInfo* waitSemaphoreInfo);
 
 void transitionImage(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout);
 void copyImageToImage(VkCommandBuffer cmd, VkImage source, VkImage destination, VkExtent2D srcSize,
     VkExtent2D dstSize);
 
-
-VkImageCreateInfo imageCreateInfo(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent);
-VkImageViewCreateInfo imageviewCreateInfo(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags);
-
-VkDescriptorSetLayoutBinding descriptorSetLayoutBinding(
-            VkDescriptorType type,
-            VkShaderStageFlags stageFlags,
-            uint32_t binding,
-            uint32_t descriptorCount = 1);
-
-VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo(VkShaderStageFlagBits stage,
-    VkShaderModule shaderModule, const char * entry = "main");
-
-VkSubmitInfo2 createSubmitInfo(VkCommandBufferSubmitInfo* cmd, VkSemaphoreSubmitInfo* signalSemaphoreInfo,
-    VkSemaphoreSubmitInfo* waitSemaphoreInfo);
-
-VkRenderingAttachmentInfo getColorAttachment(VkImageView imageView, VkClearValue *clear, VkImageLayout layout);
-VkRenderingAttachmentInfo getDepthAttachment(VkImageView imageView, VkClearValue* clear, VkImageLayout layout);
-VkRenderingInfo getRenderingInfo(VkExtent2D renderExtent, VkRenderingAttachmentInfo *colorAttachment,
-    VkRenderingAttachmentInfo *depthAttachment);
-
-VkViewport initViewport(VkExtent2D renderExtent);
-VkRect2D initScissor(VkViewport viewport);
 
 

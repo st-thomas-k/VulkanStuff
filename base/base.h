@@ -47,6 +47,10 @@ protected:
     VkCommandBuffer              immCommandBuffer;
     VkFence                      immFence;
 
+    AllocatedBuffer              vertexBuffer;
+    AllocatedBuffer              indexBuffer;
+    uint32_t                     indexCount;
+
     VkImageLayout                depthImageLayout;
     AllocatedImage               depthImage;
 
@@ -54,17 +58,22 @@ protected:
 
     std::vector<VkCommandBuffer> drawCommandBuffers {};
 
+    glm::mat4                    transform;
+
     std::vector<std::shared_ptr<MeshAsset>> meshes;
 
     VkShaderModule loadShader(VkDevice device, const char *filePath);
     MeshBuffers loadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+    void loadObj(const char *filePath);
+    AllocatedImage loadTextureImage(const char *filePath);
+    void createMipmaps(VkCommandBuffer cmd, VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
     virtual void beginCommands(VkCommandBuffer cmd, VkImageView swapchainImageView);
     virtual void endCommands(VkCommandBuffer cmd);
+    virtual void updatePerFrameData(uint32_t frameIndex);
     void initCamera(float x, float y, float z);
     void initDepthImage();
 
 public:
-
     Swapchain swapchain;
 
     Base(uint32_t _width, uint32_t _height, const char* _windowName);
@@ -77,5 +86,4 @@ public:
     void destroyAllocatedImage(VkImage image, VmaAllocation allocation);
     void destroyAllocatedBuffer(VkBuffer buffer, VmaAllocation allocation);
     void immediateSubmit(std::function<void(VkCommandBuffer cmd)> &&function);
-
 };

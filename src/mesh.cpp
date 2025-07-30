@@ -2,13 +2,10 @@
 
 #include "GLFW/glfw3.h"
 #include "../tools/gltfLoader.h"
+#include "../tools/inits.h"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
 
-#define TINYOBJLOADER_IMPLEMENTATION
 #include <iostream>
-#include <tiny_obj_loader.h>
 
 Mesh::Mesh(uint32_t _width, uint32_t _height, const char* _windowName)
     : Base(_width, _height, _windowName) {
@@ -19,7 +16,7 @@ Mesh::Mesh(uint32_t _width, uint32_t _height, const char* _windowName)
 
 
     loadObj("../assets/grass/Grass_Block.obj");
-    loadTextureImage("../assets/grass/Grass_Block_TEX.png");
+    textureImage = loadTextureImage("../assets/grass/Grass_Block_TEX.png");
 
     createInstances();
     createCullBuffers();
@@ -27,7 +24,7 @@ Mesh::Mesh(uint32_t _width, uint32_t _height, const char* _windowName)
 
     initDescriptorSets();
 
-    initMeshPipeline();
+    initInstancePipeline();
     initCullPipeline();
 }
 
@@ -62,7 +59,6 @@ void Mesh::initDescriptorSets() {
         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1.0f }
     };
 
-
     // tex descriptor set is the same for every instance.
     // just allocate them to each frame ig.
     for (uint32_t i = 0; i < MAX_FRAMES; i++) {
@@ -70,7 +66,7 @@ void Mesh::initDescriptorSets() {
 
         imageDescriptorSets[i] = frames[i]._frameDescriptors.allocate(device, meshDescriptorLayout);
         DescriptorWriter writer;
-        writer.writeImage(0, texImage.imageView, texSampler,
+        writer.writeImage(0, textureImage.imageView, texSampler,
                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
         writer.updateSet(device, imageDescriptorSets[i]);
@@ -185,7 +181,7 @@ void Mesh::createCullBuffers() {
 
 }
 
-void Mesh::initMeshPipeline() {
+void Mesh::initInstancePipeline() {
     VkShaderModule vertShader { VK_NULL_HANDLE };
     vertShader = loadShader(device, "../shaders/mesh.vert.spv");  // Use instanced shader
     assert(vertShader);
@@ -277,265 +273,6 @@ void Mesh::initCullPipeline() {
     vkDestroyShaderModule(device, cullShader, nullptr);
 }
 
-void Mesh::loadObj(const char *filePath) {
-    tinyobj::attrib_t attrib;
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-    std::string warn, err;
-
-    std::vector<Vertex>           vertices;
-    std::vector<uint32_t>         vertexIndices;
-
-    if (!LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath)) {
-        throw std::runtime_error(warn + err);
-    }
-
-    std::unordered_map<Vertex, uint32_t> uniqueVertices{};
-
-    for (const auto& shape : shapes) {
-        for (const auto& index : shape.mesh.indices) {
-            Vertex vertex{};
-
-            vertex.position = {
-                attrib.vertices[3 * index.vertex_index + 0],
-                attrib.vertices[3 * index.vertex_index + 1],
-                attrib.vertices[3 * index.vertex_index + 2]
-            };
-
-            if (index.texcoord_index >= 0) {
-                vertex.uv_x = attrib.texcoords[2 * index.texcoord_index + 0];
-                vertex.uv_y = 1.0f - attrib.texcoords[2 * index.texcoord_index + 1];
-
-            } else {
-                vertex.uv_x = 0.0f;
-                vertex.uv_y = 0.0f;
-            }
-
-            if (index.normal_index >= 0) {
-                vertex.normal = {
-                    attrib.normals[3 * index.normal_index + 0],
-                    attrib.normals[3 * index.normal_index + 1],
-                    attrib.normals[3 * index.normal_index + 2]
-                };
-            } else {
-                vertex.normal = {0.0f, 1.0f, 0.0f};
-            }
-
-            vertex.color = {1.0f, 1.0f, 1.0f};
-
-            if (!uniqueVertices.contains(vertex)) {
-                uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
-                vertices.push_back(vertex);
-            }
-
-            vertexIndices.push_back(uniqueVertices[vertex]);
-        }
-    }
-
-
-    size_t vertexBuffersize = vertices.size() * sizeof(Vertex);
-    indexCount = static_cast<uint32_t>(vertexIndices.size());
-    size_t indexBufferSize = vertexIndices.size() * sizeof(uint32_t);
-
-    vertexBuffer = createAllocatedBuffer(vertexBuffersize,  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-        VMA_MEMORY_USAGE_GPU_ONLY);
-    VkBufferDeviceAddressInfo deviceAddressInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = vertexBuffer.buffer };
-    vertexBuffer.bufferAddress = vkGetBufferDeviceAddress(device, &deviceAddressInfo);
-
-    indexBuffer = createAllocatedBuffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VMA_MEMORY_USAGE_GPU_ONLY);
-
-    AllocatedBuffer vertexStaging = createAllocatedBuffer(vertexBuffersize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-    void* vertexData;
-    vmaMapMemory(allocator, vertexStaging.allocation, &vertexData);
-    memcpy(vertexData, vertices.data(), vertexBuffersize);
-    vmaUnmapMemory(allocator, vertexStaging.allocation);
-
-    AllocatedBuffer indexStaging = createAllocatedBuffer(indexBufferSize,
-       VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-    void* indexData;
-    vmaMapMemory(allocator, indexStaging.allocation, &indexData);
-    memcpy(indexData, vertexIndices.data(), indexBufferSize);
-    vmaUnmapMemory(allocator, indexStaging.allocation);
-
-    immediateSubmit([&](VkCommandBuffer cmd) {
-        VkBufferCopy vertexCopy{};
-        vertexCopy.size = vertexBuffersize;
-        vkCmdCopyBuffer(cmd, vertexStaging.buffer, vertexBuffer.buffer, 1, &vertexCopy);
-
-        VkBufferCopy indexCopy{};
-        indexCopy.size = indexBufferSize;
-        vkCmdCopyBuffer(cmd, indexStaging.buffer, indexBuffer.buffer, 1, &indexCopy);
-    });
-
-    vmaDestroyBuffer(allocator, vertexStaging.buffer, vertexStaging.allocation);
-    vmaDestroyBuffer(allocator, indexStaging.buffer, indexStaging.allocation);
-}
-
-void Mesh::loadTextureImage(const char *filePath) {
-     int texWidth, texHeight, texChannels;
-
-    stbi_uc* pixels = stbi_load(filePath, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-    uint64_t imageSize = texWidth * texHeight * 4;
-    uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
-
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingAllocation;
-
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = imageSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-
-    vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &stagingBuffer, &stagingAllocation, nullptr);
-
-    void* mappedData;
-    vmaMapMemory(allocator, stagingAllocation, &mappedData);
-    memcpy(mappedData, pixels, imageSize);
-    vmaUnmapMemory(allocator, stagingAllocation);
-
-    stbi_image_free(pixels);
-
-    VkExtent3D imageExtent = {
-        static_cast<uint32_t>(texWidth),
-        static_cast<uint32_t>(texHeight),
-        1
-    };
-
-    texImage = createAllocatedImage(imageExtent, VK_FORMAT_R8G8B8A8_SRGB,
-           VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-           true);
-
-    immediateSubmit([&](VkCommandBuffer cmd) {
-        // Transition entire image (all mip levels) to transfer destination
-        VkImageMemoryBarrier barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = texImage.image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = mipLevels;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-        vkCmdPipelineBarrier(cmd,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-            0, 0, nullptr, 0, nullptr, 1, &barrier);
-
-        VkBufferImageCopy region{};
-        region.bufferOffset = 0;
-        region.bufferRowLength = 0;
-        region.bufferImageHeight = 0;
-        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.imageSubresource.mipLevel = 0;
-        region.imageSubresource.baseArrayLayer = 0;
-        region.imageSubresource.layerCount = 1;
-        region.imageOffset = {0, 0, 0};
-        region.imageExtent = {
-            static_cast<uint32_t>(texWidth),
-            static_cast<uint32_t>(texHeight),
-            1 };
-
-        vkCmdCopyBufferToImage(cmd, stagingBuffer, texImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-        createMipmaps(cmd, texImage.image, VK_FORMAT_R8G8B8A8_SRGB, texWidth, texHeight, mipLevels);
-    });
-
-    vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
-}
-
-void Mesh::createMipmaps(VkCommandBuffer cmd, VkImage image, VkFormat imageFormat,
-                        int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
-    VkFormatProperties formatProperties;
-    vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, &formatProperties);
-
-    if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-        throw std::runtime_error("Texture image format does not support linear blitting!");
-    }
-
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.image = image;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.subresourceRange.levelCount = 1;
-
-    int32_t mipWidth = texWidth;
-    int32_t mipHeight = texHeight;
-
-    for (uint32_t i = 1; i < mipLevels; i++) {
-        barrier.subresourceRange.baseMipLevel = i - 1;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-
-        vkCmdPipelineBarrier(cmd,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-            0, nullptr, 0, nullptr, 1, &barrier);
-
-        VkImageBlit blit{};
-        blit.srcOffsets[0] = {0, 0, 0};
-        blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
-        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        blit.srcSubresource.mipLevel = i - 1;
-        blit.srcSubresource.baseArrayLayer = 0;
-        blit.srcSubresource.layerCount = 1;
-
-        int32_t nextMipWidth = mipWidth > 1 ? mipWidth / 2 : 1;
-        int32_t nextMipHeight = mipHeight > 1 ? mipHeight / 2 : 1;
-
-        blit.dstOffsets[0] = {0, 0, 0};
-        blit.dstOffsets[1] = {nextMipWidth, nextMipHeight, 1};
-        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        blit.dstSubresource.mipLevel = i;
-        blit.dstSubresource.baseArrayLayer = 0;
-        blit.dstSubresource.layerCount = 1;
-
-        vkCmdBlitImage(cmd,
-            image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            1, &blit, VK_FILTER_LINEAR);
-
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-        vkCmdPipelineBarrier(cmd,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-            0, nullptr, 0, nullptr, 1, &barrier);
-
-        mipWidth = nextMipWidth;
-        mipHeight = nextMipHeight;
-    }
-
-    // Transition the last mip level
-    barrier.subresourceRange.baseMipLevel = mipLevels - 1;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-    vkCmdPipelineBarrier(cmd,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-        0, nullptr, 0, nullptr, 1, &barrier);
-}
 
 void Mesh::createIndirectBuffer() {
     indirectCommand.indexCount = indexCount;
@@ -577,7 +314,6 @@ void Mesh::createIndirectBuffer() {
 
 void Mesh::recordCommands(VkCommandBuffer cmd, uint32_t frameNumber, VkImageView swapchainImageView) {
     uint32_t frameIndex = frameNumber % MAX_FRAMES;
-    FrameData& frame = frames[frameIndex];
 
     beginCommands(cmd, swapchainImageView);
 
@@ -625,10 +361,14 @@ void Mesh::drawFrame() {
     uint32_t swapchainImageIndex;
     VkResult result = swapchain.acquireNextImage(frame.imgAvailable, swapchainImageIndex);
 
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        // think it's out of date or suboptimal . . . anyways . . . accommodate resizes
+    }
+
     VK_CHECK(vkResetFences(device, 1, &frame.renderFence));
     VK_CHECK(vkResetCommandBuffer(frame.commandBuffer, 0));
 
-    VkCommandBufferBeginInfo beginInfo{};
+    VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
@@ -643,15 +383,17 @@ void Mesh::drawFrame() {
     uint32_t workgroupCount = (trueInstanceCount + 63) / 64;
     vkCmdDispatch(frame.commandBuffer, workgroupCount, 1, 1);
 
-    VkMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    VkMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+
     vkCmdPipelineBarrier(frame.commandBuffer,
                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                         VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-                        0, 1, &barrier, 0, nullptr, 0, nullptr);
-
-
+                        0, 1, &barrier,
+                        0, nullptr,
+                        0, nullptr);
 
     transitionImage(frame.commandBuffer, swapchain.images[swapchainImageIndex],
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -664,44 +406,35 @@ void Mesh::drawFrame() {
 
     VK_CHECK(vkEndCommandBuffer(frame.commandBuffer));
 
-    VkCommandBufferSubmitInfo cmdInfo{};
+    VkCommandBufferSubmitInfo cmdInfo = {};
     cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
     cmdInfo.commandBuffer = frame.commandBuffer;
 
-    VkSemaphoreSubmitInfo waitSemaphoreInfo{};
+    VkSemaphoreSubmitInfo waitSemaphoreInfo = {};
     waitSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
     waitSemaphoreInfo.semaphore = frame.imgAvailable;
     waitSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
-    VkSemaphoreSubmitInfo signalSemaphoreInfo{};
+    VkSemaphoreSubmitInfo signalSemaphoreInfo = {};
     signalSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
     signalSemaphoreInfo.semaphore = frame.renderComplete;
     signalSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
 
-    VkSubmitInfo2 submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-    submitInfo.waitSemaphoreInfoCount = 1;
-    submitInfo.pWaitSemaphoreInfos = &waitSemaphoreInfo;
-    submitInfo.signalSemaphoreInfoCount = 1;
-    submitInfo.pSignalSemaphoreInfos = &signalSemaphoreInfo;
-    submitInfo.commandBufferInfoCount = 1;
-    submitInfo.pCommandBufferInfos = &cmdInfo;
+    VkSubmitInfo2 submitInfo = createSubmitInfo(&cmdInfo, &signalSemaphoreInfo, &waitSemaphoreInfo);
 
     VK_CHECK(vkQueueSubmit2(graphicsQueue, 1, &submitInfo, frame.renderFence));
 
-    if (currentFrame % 60 == 0) {  // Every 60 frames
+    /*if (currentFrame % 60 == 0) {
         readCullStats(frameIndex);
-    }
+    }*/
 
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &frame.renderComplete;
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &swapchain.swapchain;
-    presentInfo.pImageIndices = &swapchainImageIndex;
+    VkPresentInfoKHR presentInfo = getPresentInfoKHR(&frame.renderComplete, &swapchain.swapchain, swapchainImageIndex);
 
     VkResult presentResult = vkQueuePresentKHR(presentQueue, &presentInfo);
+
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR) {
+        // need to handle swapchain resizes
+    }
 
     currentFrame++;
 }
@@ -761,15 +494,15 @@ Mesh::~Mesh() {
     vkDeviceWaitIdle(device);
 
     swapchain.cleanup();
-    vkDestroyImageView(device, texImage.imageView, nullptr);
-    vmaDestroyImage(allocator, texImage.image, texImage.allocation);
+    vkDestroyImageView(device, textureImage.imageView, nullptr);
+    vmaDestroyImage(allocator, textureImage.image, textureImage.allocation);
     vkDestroyImageView(device, depthImage.imageView, nullptr);
     vmaDestroyImage(allocator, depthImage.image, depthImage.allocation);
 
     vkDestroySampler(device, texSampler, nullptr);
 
     for (uint32_t i = 0; i < MAX_FRAMES; i++) {
-        frames[i]._frameDescriptors.destroy_pools(device);
+        frames[i]._frameDescriptors.destroyPools(device);
         vmaDestroyBuffer(allocator, cullDataBuffers[i].buffer, cullDataBuffers[i].allocation);
         vmaDestroyBuffer(allocator, cullStatsBuffers[i].buffer, cullStatsBuffers[i].allocation);
 

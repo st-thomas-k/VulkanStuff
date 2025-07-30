@@ -1,8 +1,7 @@
 #include "utils.h"
+#include "inits.h"
 
-
-VkSemaphore createSemaphore(VkDevice device, VkSemaphoreCreateFlags flags)
-{
+VkSemaphore createSemaphore(VkDevice device, VkSemaphoreCreateFlags flags) {
     VkSemaphoreCreateInfo createInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
     createInfo.flags = flags;
     createInfo.pNext = nullptr;
@@ -12,9 +11,9 @@ VkSemaphore createSemaphore(VkDevice device, VkSemaphoreCreateFlags flags)
     return semaphore;
 }
 
-VkFence createFence(VkDevice device, VkFenceCreateFlags flags)
-{
-    VkFenceCreateInfo createInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+VkFence createFence(VkDevice device, VkFenceCreateFlags flags) {
+    VkFenceCreateInfo createInfo = {};
+    createInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     createInfo.flags = flags;
     createInfo.pNext = nullptr;
     VkFence fence { VK_NULL_HANDLE };
@@ -23,62 +22,9 @@ VkFence createFence(VkDevice device, VkFenceCreateFlags flags)
     return fence;
 }
 
-VkSemaphoreSubmitInfo semaphoreSubmitInfo(VkPipelineStageFlags2 stageMask, VkSemaphore semaphore)
-{
-    VkSemaphoreSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-    submitInfo.pNext = nullptr;
-    submitInfo.semaphore = semaphore;
-    submitInfo.stageMask = stageMask;
-    submitInfo.deviceIndex = 0;
-    submitInfo.value = 1;
-
-    return submitInfo;
-}
-
-VkCommandBufferBeginInfo commandBufferBeginInfo(VkCommandBufferUsageFlags flags)
-{
-    VkCommandBufferBeginInfo cmdInfo = {};
-    cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    cmdInfo.pNext = nullptr;
-    cmdInfo.pInheritanceInfo = nullptr;
-    cmdInfo.flags = flags;
-
-    return cmdInfo;
-}
-
-VkCommandBufferSubmitInfo submitCommandBufferInfo(VkCommandBuffer cmd)
-{
-    VkCommandBufferSubmitInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-    info.pNext = nullptr;
-    info.commandBuffer = cmd;
-    info.deviceMask = 0;
-
-    return info;
-}
-
-VkSubmitInfo2 submitInfo(VkCommandBufferSubmitInfo* cmd, VkSemaphoreSubmitInfo* signalSemaphoreInfo,
-    VkSemaphoreSubmitInfo* waitSemaphoreInfo)
-{
-    VkSubmitInfo2 info = {};
-    info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-    info.pNext = nullptr;
-
-    info.waitSemaphoreInfoCount = waitSemaphoreInfo == nullptr ? 0 : 1;
-    info.pWaitSemaphoreInfos = waitSemaphoreInfo;
-
-    info.signalSemaphoreInfoCount = signalSemaphoreInfo == nullptr ? 0 : 1;
-    info.pSignalSemaphoreInfos = signalSemaphoreInfo;
-
-    info.commandBufferInfoCount = 1;
-    info.pCommandBufferInfos = cmd;
-
-    return info;
-}
-
 void transitionImage(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout) {
-    VkImageMemoryBarrier2 imageBarrier {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+    VkImageMemoryBarrier2 imageBarrier = {};
+    imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     imageBarrier.pNext = nullptr;
 
     imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
@@ -91,7 +37,7 @@ void transitionImage(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLa
 
     VkImageAspectFlags aspectMask = (newLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
 
-    VkImageSubresourceRange subImage {};
+    VkImageSubresourceRange subImage = {};
     subImage.aspectMask = aspectMask;
     subImage.baseMipLevel = 0;
     subImage.levelCount = VK_REMAINING_MIP_LEVELS;
@@ -101,7 +47,7 @@ void transitionImage(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLa
     imageBarrier.subresourceRange = subImage;
     imageBarrier.image = image;
 
-    VkDependencyInfo depInfo {};
+    VkDependencyInfo depInfo = {};
     depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     depInfo.pNext = nullptr;
 
@@ -113,7 +59,7 @@ void transitionImage(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLa
 
 void copyImageToImage(VkCommandBuffer cmd, VkImage source, VkImage destination, VkExtent2D srcSize,
     VkExtent2D dstSize) {
-    VkImageBlit2 blitRegion{};
+    VkImageBlit2 blitRegion = {};
     blitRegion.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
     blitRegion.pNext = nullptr;
 
@@ -133,7 +79,7 @@ void copyImageToImage(VkCommandBuffer cmd, VkImage source, VkImage destination, 
     blitRegion.dstSubresource.layerCount = 1;
     blitRegion.dstSubresource.mipLevel = 0;
 
-    VkBlitImageInfo2 blitInfo{};
+    VkBlitImageInfo2 blitInfo = {};
     blitInfo.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
     blitInfo.pNext = nullptr;
     blitInfo.srcImage = source;
@@ -146,86 +92,7 @@ void copyImageToImage(VkCommandBuffer cmd, VkImage source, VkImage destination, 
     vkCmdBlitImage2(cmd, &blitInfo);
 }
 
-
-VkImageCreateInfo imageCreateInfo(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent) {
-    VkImageCreateInfo info = {};
-    info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    info.pNext = nullptr;
-    info.imageType = VK_IMAGE_TYPE_2D;
-    info.format = format;
-    info.extent = extent;
-    info.mipLevels = 1;
-    info.arrayLayers = 1;
-    info.samples = VK_SAMPLE_COUNT_1_BIT;
-    info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    info.usage = usageFlags;
-
-    return info;
-}
-
-VkImageViewCreateInfo imageviewCreateInfo(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags) {
-    VkImageViewCreateInfo info = {};
-    info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    info.pNext = nullptr;
-
-    info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    info.image = image;
-    info.format = format;
-    info.subresourceRange.baseMipLevel = 0;
-    info.subresourceRange.levelCount = 1;
-    info.subresourceRange.baseArrayLayer = 0;
-    info.subresourceRange.layerCount = 1;
-    info.subresourceRange.aspectMask = aspectFlags;
-
-    return info;
-}
-
-VkSubmitInfo2 createSubmitInfo(VkCommandBufferSubmitInfo* cmd, VkSemaphoreSubmitInfo* signalSemaphoreInfo,
-    VkSemaphoreSubmitInfo* waitSemaphoreInfo) {
-    VkSubmitInfo2 info = {};
-    info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-    info.pNext = nullptr;
-
-    info.waitSemaphoreInfoCount = waitSemaphoreInfo == nullptr ? 0 : 1;
-    info.pWaitSemaphoreInfos = waitSemaphoreInfo;
-
-    info.signalSemaphoreInfoCount = signalSemaphoreInfo == nullptr ? 0 : 1;
-    info.pSignalSemaphoreInfos = signalSemaphoreInfo;
-
-    info.commandBufferInfoCount = 1;
-    info.pCommandBufferInfos = cmd;
-
-    return info;
-}
-
-VkDescriptorSetLayoutBinding descriptorSetLayoutBinding(
-            VkDescriptorType type,
-            VkShaderStageFlags stageFlags,
-            uint32_t binding,
-            uint32_t descriptorCount)
-{
-    VkDescriptorSetLayoutBinding setLayoutBinding {};
-    setLayoutBinding.descriptorType = type;
-    setLayoutBinding.stageFlags = stageFlags;
-    setLayoutBinding.binding = binding;
-    setLayoutBinding.descriptorCount = descriptorCount;
-    return setLayoutBinding;
-}
-
-VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo(VkShaderStageFlagBits stage,
-    VkShaderModule shaderModule, const char * entry) {
-
-    VkPipelineShaderStageCreateInfo info {};
-    info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    info.pNext = nullptr;
-    info.stage = stage;
-    info.module = shaderModule;
-    info.pName = entry;
-    return info;
-}
-
-void DescriptorLayout::addBinding(uint32_t binding, VkDescriptorType type)
-{
+void DescriptorLayout::addBinding(uint32_t binding, VkDescriptorType type) {
     VkDescriptorSetLayoutBinding newBind = {};
     newBind.binding = binding;
     newBind.descriptorCount = 1;
@@ -234,19 +101,19 @@ void DescriptorLayout::addBinding(uint32_t binding, VkDescriptorType type)
     bindings.push_back(newBind);
 }
 
-void DescriptorLayout::clear()
-{
+void DescriptorLayout::clear() {
     bindings.clear();
 }
 
 VkDescriptorSetLayout DescriptorLayout::build(VkDevice device, VkShaderStageFlags shaderStages, void *pNext,
-    VkDescriptorSetLayoutCreateFlags flags)
-{
+    VkDescriptorSetLayoutCreateFlags flags) {
+
     for (auto& bind : bindings) {
         bind.stageFlags |= shaderStages;
     }
 
-    VkDescriptorSetLayoutCreateInfo info = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+    VkDescriptorSetLayoutCreateInfo info = {};
+    info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     info.pNext = pNext;
     info.pBindings = bindings.data();
     info.bindingCount = (uint32_t)bindings.size();
@@ -258,8 +125,7 @@ VkDescriptorSetLayout DescriptorLayout::build(VkDevice device, VkShaderStageFlag
     return set;
 }
 
-void DescriptorAllocator::initPool(VkDevice device, uint32_t maxSets, std::span<PoolSizeRatio> poolRatios)
-{
+void DescriptorAllocator::initPool(VkDevice device, uint32_t maxSets, std::span<PoolSizeRatio> poolRatios) {
     std::vector<VkDescriptorPoolSize> poolSizes;
     for (PoolSizeRatio ratio : poolRatios) {
         poolSizes.push_back(VkDescriptorPoolSize{
@@ -268,28 +134,27 @@ void DescriptorAllocator::initPool(VkDevice device, uint32_t maxSets, std::span<
         });
     }
 
-    VkDescriptorPoolCreateInfo pool_info = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    pool_info.flags = 0;
-    pool_info.maxSets = maxSets;
-    pool_info.poolSizeCount = (uint32_t)poolSizes.size();
-    pool_info.pPoolSizes = poolSizes.data();
+    VkDescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = 0;
+    poolInfo.maxSets = maxSets;
+    poolInfo.poolSizeCount = (uint32_t)poolSizes.size();
+    poolInfo.pPoolSizes = poolSizes.data();
 
-    vkCreateDescriptorPool(device, &pool_info, nullptr, &pool);
+    vkCreateDescriptorPool(device, &poolInfo, nullptr, &pool);
 }
 
-void DescriptorAllocator::clearDescriptors(VkDevice device)
-{
+void DescriptorAllocator::clearDescriptors(VkDevice device) {
     vkResetDescriptorPool(device, pool, 0);
 }
 
-void DescriptorAllocator::destroyPool(VkDevice device)
-{
+void DescriptorAllocator::destroyPool(VkDevice device) {
     vkDestroyDescriptorPool(device, pool,nullptr);
 }
 
-VkDescriptorSet DescriptorAllocator::allocate(VkDevice device, VkDescriptorSetLayout layout)
-{
-    VkDescriptorSetAllocateInfo allocInfo = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+VkDescriptorSet DescriptorAllocator::allocate(VkDevice device, VkDescriptorSetLayout layout) {
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.pNext = nullptr;
     allocInfo.descriptorPool = pool;
     allocInfo.descriptorSetCount = 1;
@@ -301,16 +166,15 @@ VkDescriptorSet DescriptorAllocator::allocate(VkDevice device, VkDescriptorSetLa
     return ds;
 }
 
-void DescriptorWriter::writeBuffer(int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type)
-{
+void DescriptorWriter::writeBuffer(int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type) {
     VkDescriptorBufferInfo& info = bufferInfos.emplace_back(VkDescriptorBufferInfo{
         .buffer = buffer,
         .offset = offset,
         .range = size
         });
 
-    VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-
+    VkWriteDescriptorSet write = {};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstBinding = binding;
     write.dstSet = VK_NULL_HANDLE;
     write.descriptorCount = 1;
@@ -328,8 +192,8 @@ void DescriptorWriter::writeImage(int binding,VkImageView image, VkSampler sampl
         .imageLayout = layout
     });
 
-    VkWriteDescriptorSet write = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-
+    VkWriteDescriptorSet write = {};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstBinding = binding;
     write.dstSet = VK_NULL_HANDLE;
     write.descriptorCount = 1;
@@ -339,15 +203,13 @@ void DescriptorWriter::writeImage(int binding,VkImageView image, VkSampler sampl
     writes.push_back(write);
 }
 
-void DescriptorWriter::clear()
-{
+void DescriptorWriter::clear() {
     imageInfos.clear();
     writes.clear();
     bufferInfos.clear();
 }
 
-void DescriptorWriter::updateSet(VkDevice device, VkDescriptorSet set)
-{
+void DescriptorWriter::updateSet(VkDevice device, VkDescriptorSet set) {
     for (VkWriteDescriptorSet& write : writes) {
         write.dstSet = set;
     }
@@ -355,15 +217,14 @@ void DescriptorWriter::updateSet(VkDevice device, VkDescriptorSet set)
     vkUpdateDescriptorSets(device, (uint32_t)writes.size(), writes.data(), 0, nullptr);
 }
 
-VkDescriptorPool DescriptorAllocatorGrowable::get_pool(VkDevice device)
-{
+VkDescriptorPool DescriptorAllocatorGrowable::getPool(VkDevice device) {
     VkDescriptorPool newPool;
     if (readyPools.size() != 0) {
         newPool = readyPools.back();
         readyPools.pop_back();
     }
     else {
-        newPool = create_pool(device, setsPerPool, ratios);
+        newPool = createPool(device, setsPerPool, ratios);
 
         setsPerPool = setsPerPool * 1.5;
         if (setsPerPool > 4092) {
@@ -374,8 +235,7 @@ VkDescriptorPool DescriptorAllocatorGrowable::get_pool(VkDevice device)
     return newPool;
 }
 
-VkDescriptorPool DescriptorAllocatorGrowable::create_pool(VkDevice device, uint32_t setCount, std::span<PoolSizeRatio> poolRatios)
-{
+VkDescriptorPool DescriptorAllocatorGrowable::createPool(VkDevice device, uint32_t setCount, std::span<PoolSizeRatio> poolRatios) {
     std::vector<VkDescriptorPoolSize> poolSizes;
     for (PoolSizeRatio ratio : poolRatios) {
         poolSizes.push_back(VkDescriptorPoolSize{
@@ -384,35 +244,33 @@ VkDescriptorPool DescriptorAllocatorGrowable::create_pool(VkDevice device, uint3
         });
     }
 
-    VkDescriptorPoolCreateInfo pool_info = {};
-    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_info.flags = 0;
-    pool_info.maxSets = setCount;
-    pool_info.poolSizeCount = (uint32_t)poolSizes.size();
-    pool_info.pPoolSizes = poolSizes.data();
+    VkDescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = 0;
+    poolInfo.maxSets = setCount;
+    poolInfo.poolSizeCount = (uint32_t)poolSizes.size();
+    poolInfo.pPoolSizes = poolSizes.data();
 
     VkDescriptorPool newPool;
-    vkCreateDescriptorPool(device, &pool_info, nullptr, &newPool);
+    vkCreateDescriptorPool(device, &poolInfo, nullptr, &newPool);
     return newPool;
 }
 
-void DescriptorAllocatorGrowable::init(VkDevice device, uint32_t maxSets, std::span<PoolSizeRatio> poolRatios)
-{
+void DescriptorAllocatorGrowable::init(VkDevice device, uint32_t maxSets, std::span<PoolSizeRatio> poolRatios) {
     ratios.clear();
 
     for (auto r : poolRatios) {
         ratios.push_back(r);
     }
 
-    VkDescriptorPool newPool = create_pool(device, maxSets, poolRatios);
+    VkDescriptorPool newPool = createPool(device, maxSets, poolRatios);
 
     setsPerPool = maxSets * 1.5;
 
     readyPools.push_back(newPool);
 }
 
-void DescriptorAllocatorGrowable::clear_pools(VkDevice device)
-{
+void DescriptorAllocatorGrowable::clearPools(VkDevice device) {
     for (auto p : readyPools) {
         vkResetDescriptorPool(device, p, 0);
     }
@@ -423,8 +281,7 @@ void DescriptorAllocatorGrowable::clear_pools(VkDevice device)
     fullPools.clear();
 }
 
-void DescriptorAllocatorGrowable::destroy_pools(VkDevice device)
-{
+void DescriptorAllocatorGrowable::destroyPools(VkDevice device) {
     for (auto p : readyPools) {
         vkDestroyDescriptorPool(device, p, nullptr);
     }
@@ -435,9 +292,8 @@ void DescriptorAllocatorGrowable::destroy_pools(VkDevice device)
     fullPools.clear();
 }
 
-VkDescriptorSet DescriptorAllocatorGrowable::allocate(VkDevice device, VkDescriptorSetLayout layout, void* pNext)
-{
-    VkDescriptorPool poolToUse = get_pool(device);
+VkDescriptorSet DescriptorAllocatorGrowable::allocate(VkDevice device, VkDescriptorSetLayout layout, void* pNext) {
+    VkDescriptorPool poolToUse = getPool(device);
 
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.pNext = pNext;
@@ -453,7 +309,7 @@ VkDescriptorSet DescriptorAllocatorGrowable::allocate(VkDevice device, VkDescrip
 
         fullPools.push_back(poolToUse);
 
-        poolToUse = get_pool(device);
+        poolToUse = getPool(device);
         allocInfo.descriptorPool = poolToUse;
 
         VK_CHECK( vkAllocateDescriptorSets(device, &allocInfo, &ds));
@@ -523,7 +379,6 @@ void PipelineBuilder::setShaders(VkShaderModule vertexShader, VkShaderModule fra
     shaderStages.push_back(pipelineShaderStageCreateInfo(VK_SHADER_STAGE_VERTEX_BIT, vertexShader));
 
     shaderStages.push_back(pipelineShaderStageCreateInfo(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShader));
-
 }
 
 void PipelineBuilder::setInputTopology(VkPrimitiveTopology topology) {
@@ -622,73 +477,8 @@ void PipelineBuilder::enableBlendingAlphaBlend() {
     colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 }
 
-VkRenderingAttachmentInfo getColorAttachment(VkImageView imageView, VkClearValue *clear, VkImageLayout layout) {
-    VkRenderingAttachmentInfo colorAttachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-    colorAttachment.pNext = nullptr;
-    colorAttachment.imageView = imageView;
-    colorAttachment.imageLayout = layout;
-    colorAttachment.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 
-    if (clear) {
-        colorAttachment.clearValue = *clear;
-    }
 
-    return colorAttachment;
-}
 
-VkRenderingAttachmentInfo getDepthAttachment(VkImageView imageView, VkClearValue* clear, VkImageLayout layout) {
-    VkRenderingAttachmentInfo depthAttachment {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-    depthAttachment.pNext = nullptr;
-    depthAttachment.imageView = imageView;
-    depthAttachment.imageLayout = layout;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttachment.clearValue.depthStencil.depth = 1.0f;
-    depthAttachment.clearValue.depthStencil.stencil = 0;
 
-    if (clear) {
-        depthAttachment.clearValue = *clear;
-    }
 
-    return depthAttachment;
-}
-
-VkRenderingInfo getRenderingInfo(VkExtent2D renderExtent, VkRenderingAttachmentInfo *colorAttachment,
-    VkRenderingAttachmentInfo *depthAttachment)
-{
-    VkRenderingInfo renderInfo {};
-    renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderInfo.pNext = nullptr;
-
-    renderInfo.renderArea = VkRect2D { VkOffset2D { 0, 0 }, renderExtent };
-    renderInfo.layerCount = 1;
-    renderInfo.colorAttachmentCount = 1;
-    renderInfo.pColorAttachments = colorAttachment;
-    renderInfo.pDepthAttachment = depthAttachment;
-    renderInfo.pStencilAttachment = nullptr;
-
-    return renderInfo;
-}
-
-VkViewport initViewport(VkExtent2D renderExtent) {
-    VkViewport viewport = {};
-    viewport.x = 0;
-    viewport.y = 0;
-    viewport.width = (float)renderExtent.width;
-    viewport.height = (float)renderExtent.height;
-    viewport.minDepth = 0.f;
-    viewport.maxDepth = 1.f;
-
-    return viewport;
-}
-
-VkRect2D initScissor(VkViewport viewport) {
-    VkRect2D scissor = {};
-    scissor.offset.x = 0;
-    scissor.offset.y = 0;
-    scissor.extent.width = viewport.width;
-    scissor.extent.height = viewport.height;
-
-    return scissor;
-}
