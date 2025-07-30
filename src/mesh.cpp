@@ -14,8 +14,8 @@ Mesh::Mesh(uint32_t _width, uint32_t _height, const char* _windowName)
     initCamera(0.0f, 20.0f, 50.0f);
     initDepthImage();
 
-    loadObj("../assets/cat/catn0.obj");
-    textureImage = loadTextureImage("../assets/cat/cat_text_m.jpg");
+    loadObj("../assets/barrel/Barrel.obj");
+    textureImage = loadTextureImage("../assets/barrel/Barrel_Base_Color.png");
 
     createInstances();
     createCullBuffers();
@@ -96,21 +96,19 @@ void Mesh::createInstances() {
     instances.clear();
     instances.reserve(8000);
 
-    const int gridX = 20;
-    const int gridY = 20;
-    const int gridZ = 20;
+    const int gridDim = 20;
     const float spacing = 5.0f;
-    const float cubeScale = 0.3f;
+    const float cubeScale = 0.01f;
 
-    for (int x = 0; x < gridX; x++) {
-        for (int y = 0; y < gridY; y++) {
-            for (int z = 0; z < gridZ; z++) {
+    for (int x = 0; x < gridDim; x++) {
+        for (int y = 0; y < gridDim; y++) {
+            for (int z = 0; z < gridDim; z++) {
                 InstanceData instance{};
 
                 instance.position = glm::vec3(
-                    (x - gridX/2) * spacing,
-                    (y - gridY/2) * spacing,
-                    (z - gridZ/2) * spacing
+                    (x - gridDim/2) * spacing,
+                    (y - gridDim/2) * spacing,
+                    (z - gridDim/2) * spacing
                 );
 
                 instance.scale = cubeScale;
