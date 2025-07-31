@@ -149,7 +149,7 @@ void Mesh::createInstances() {
 
     vmaDestroyBuffer(allocator, staging.buffer, staging.allocation);
 
-    // done with this
+    // useful if number of instances is really high -- save space
     instances.clear();
     instances.shrink_to_fit();
 }
@@ -172,7 +172,7 @@ void Mesh::createCullBuffers() {
 
 void Mesh::initInstancePipeline() {
     VkShaderModule vertShader { VK_NULL_HANDLE };
-    vertShader = loadShader(device, "../shaders/mesh.vert.spv");  // Use instanced shader
+    vertShader = loadShader(device, "../shaders/mesh.vert.spv");
     assert(vertShader);
 
     VkShaderModule fragShader { VK_NULL_HANDLE };
@@ -378,9 +378,8 @@ void Mesh::drawFrame() {
                            cullPipelineLayout, 0, 1,
                            &cullDescriptorSets[frameIndex], 0, nullptr);
 
-
-    // If your shader can handle different local sizes efficiently
-    uint32_t optimalLocalSize = 128; // or 256, depending on your GPU
+    // can change # depending on capabilities . . . 64, 128, 256
+    uint32_t optimalLocalSize = 128;
     uint32_t workgroupCount = (trueInstanceCount + optimalLocalSize - 1) / optimalLocalSize;
     vkCmdDispatch(frame.commandBuffer, workgroupCount, 1, 1);
 
